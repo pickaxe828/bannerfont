@@ -3,14 +3,15 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "type": "module",
   "scripts": {
-    "pixilate": "node src/pixilate.js"
+    "pixilate": "ts-node src/pixilate.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@jimp/png": "^0.22.10",
+    "@types/node": "^20.8.3",
     "jimp": "^0.22.10",
     "paper": "^0.12.17",
     "paper-jsdom": "^0.12.17"

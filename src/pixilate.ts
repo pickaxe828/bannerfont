@@ -1,22 +1,49 @@
 import paper from "paper"
 import fs from "fs"
-import Jimp form "jimp"
+import Jimp from "jimp"
 
-console.log(process.argv[2])
+let args = process.argv.slice(2)
 
-var size = new paper.Size(300, 300)
-paper.setup(size);
+if (args.length === 0) { throw new Error("No image path provided") }
 
-var path = new paper.Path();
-path.strokeColor = '#348BF0';
+function sliceInteger(integer: number, start: number, length: number) {
+  return (integer >> start) & ((1 << length) - 1)
+}
 
-var start = new paper.Point(100, 100);
-var end = new paper.Point(200, 200);
+function processImage(path: string) {
+  // Canva setup
+  let size = new paper.Size(100, 200)
+  paper.setup(size)
 
-path.moveTo(start);
-path.lineTo(end);
+  // Loop over pixels
+  Jimp.read(
+    path, (err, image) => {
+      if (err) throw err
 
-console.log('width', path.bounds.width, 'height', path.bounds.height);
+      for (let y = 0; y < image.bitmap.width; y++) {
+        for (let x = 0; x < image.bitmap.width; x++) {
+          image.getPixelColor(x, y, (err, value) => {
+            let rect = new paper.Path.Rectangle({
+              point: [x, y],
+              size: [1, 1]
+            })
+            rect.fillColor = new paper.Color(
+              sliceInteger(value, 6 * 4, 2 * 4),
+              sliceInteger(value, 4 * 4, 2 * 4),
+              sliceInteger(value, 2 * 4, 2 * 4),
+              sliceInteger(value, 0 * 4, 2 * 4)
+            )
+            paper.project.addLayer(new paper.Layer()).addChild(rect)
+          })
+        }
+      }
+      // Must export here, before leaving the scope
+      console.log(paper.project.layers.length)
+      let svg = paper.project.exportSVG({ asString: true }) as string
+      fs.writeFileSync("output.svg", svg)
+    }
+  )
 
-var svg = paper.project.exportSVG({asString:true});
-fs.writeFileSync('punchline.svg', svg);
+}
+
+processImage(args[0])
