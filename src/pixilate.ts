@@ -2,22 +2,21 @@ import fs from "fs"
 import paper from "paper"
 import Jimp from "jimp"
 
-let args = process.argv.slice(2)
-
-if (args.length === 0) { throw new Error("No image path provided") }
-
 function sliceInteger(integer: number, start: number, length: number) {
   return (integer >> start) & ((1 << length) - 1)
 }
 
-async function processImage(path: string) {
+export async function processImage(path: string) {
   // Canva setup
   paper.setup(new paper.Size(100, 200))
+
+  // Layer setup
+  let layers = new Map<string, paper.Layer>();
 
   // Loop over pixels
   let image = await Jimp.read(path)
 
-  for (let y = 0; y < image.bitmap.width; y++) {
+  for (let y = 0; y < image.bitmap.height; y++) {
     for (let x = 0; x < image.bitmap.width; x++) {
       image.getPixelColor(x, y, (err, value) => {
         let rect = new paper.Path.Rectangle({
@@ -31,9 +30,30 @@ async function processImage(path: string) {
           sliceInteger(value, 2 * 4, 2 * 4),
           sliceInteger(value, 0 * 4, 2 * 4)
         )
-        paper.project.addLayer(new paper.Layer()).addChild(rect)
+        
+        // Add layer if not exists
+        if ( layers.get(value.toString()) === undefined ) {
+          layers.set(value.toString(), new paper.Layer())
+        }
+
+        // Add rectangle to layer
+        layers.get(value.toString())?.addChild(rect)
       })
     }
+  }
+
+  // Boolean operation unite all rectangles
+  for (let key of layers.keys()) {
+    layers.get(key)?.children.reduce(
+      (previous, current) => (previous as paper.Path.Rectangle).unite(current as paper.Path.Rectangle)
+    )
+  }
+
+  console.log(layers.size)
+
+  // Export SVG
+  for (let layer of layers.values()) { 
+    paper.project.addLayer(layer)
   }
 
   console.log(paper.project.layers.length)
