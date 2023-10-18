@@ -8,17 +8,21 @@
     "node": ">=16"
   },
   "scripts": {
-    "pixilate": "node --loader ts-node/esm ./main.ts"
+    "pixilate": "node --loader ts-node/esm src/main.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@jimp/png": "^0.22.10",
-    "@types/node": "^20.8.3",
+    "@types/node": "^20.8.6",
+    "canvas": "^2.11.2",
     "jimp": "^0.22.10",
     "paper": "^0.12.17",
     "paper-jsdom": "^0.12.17",
+    "quanti": "^1.0.8",
     "ts-node": "^10.9.1"
+  },
+  "devDependencies": {
+    "@types/quantize": "^1.0.0"
   }
 }

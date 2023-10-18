@@ -11,8 +11,8 @@
         "strict": true,
         "skipLibCheck": true,
         "esModuleInterop": true,
-        "noEmit": true,
         "allowImportingTsExtensions": true,
+        "noEmit": true,
     },
     "ts-node": {
         "experimentalSpecifierResolution": "node",
