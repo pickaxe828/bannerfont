@@ -43,8 +43,6 @@ export async function processImage(path: string) {
   // Output quantized image
   let quantizedImage = new paper.Raster
   quantizedImage.setImageData(originalImageData)
-  // @ts-ignore
-  originalImage.remove()
 
   // Generate vector rectangles
   for (let y = 0; y < quantizedImage.height; y++) {
@@ -73,6 +71,10 @@ export async function processImage(path: string) {
   }
 
   console.log(layers.size)
+
+  // Clean up
+  originalImage.remove()
+  quantizedImage.remove()
 
   // Export SVG
   for (let layer of layers.values()) { 
