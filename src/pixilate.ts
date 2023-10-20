@@ -1,21 +1,16 @@
 import fs from "fs"
 
-import jimp from "jimp"
 import paper from "paper"
 import quanti from "quanti"
 import canvas, { createCanvas } from "canvas"
-// @ts-ignore
-import { setup } from "./debug.js"
 
-setup()
+const PIXEL_BLEED_FOR_BOOL_OP_UNITE = 0 // Unused
 
 function sliceInteger(integer: number, start: number, length: number) {
   return (integer >> start) & ((1 << length) - 1)
 }
 
-export async function processImage(path: string) {
-  // TODO: Original PNG is in the canvas somehow. Find out why and remove it.
-  // TODO: The result is not centered. 
+export async function processImage(path: string, colorNumber: number) {
   // Canva setup
   paper.setup(new paper.Size(20, 40))
 
@@ -33,11 +28,14 @@ export async function processImage(path: string) {
   // Put image into paper
   let originalImage = new paper.Raster(canva)
   let originalImageData = originalImage.getImageData(
-    new paper.Rectangle(0, 0, originalImage.width, originalImage.height)
+    new paper.Rectangle(0, 0, 
+      originalImage.width  + PIXEL_BLEED_FOR_BOOL_OP_UNITE, 
+      originalImage.height + PIXEL_BLEED_FOR_BOOL_OP_UNITE
+    )
   )
 
   // Quantization
-  const palette = quanti(originalImageData.data, 2, 4)
+  const palette = quanti(originalImageData.data, colorNumber, 4)
   palette.process(originalImageData.data)
 
   // Output quantized image
@@ -47,13 +45,18 @@ export async function processImage(path: string) {
   // Generate vector rectangles
   for (let y = 0; y < quantizedImage.height; y++) {
     for (let x = 0; x < quantizedImage.width; x++) {
+      // Get color of the pixel
       let color = quantizedImage.getPixel(x, y)
+
+      // Skip transparent pixels
+      if (color.alpha === 0) { continue }
+      
       let rectangle = new paper.Path.Rectangle({
         point: [x, y],
         size: [1, 1]
       })
-        rectangle.fillColor = color
-      
+      rectangle.fillColor = color
+
       // Create layer if not exists
       if ( layers.get(color.toString()) === undefined ) {
         layers.set(color.toString(), new paper.Layer())
@@ -70,8 +73,6 @@ export async function processImage(path: string) {
     )
   }
 
-  console.log(layers.size)
-
   // Clean up
   originalImage.remove()
   quantizedImage.remove()
@@ -81,7 +82,5 @@ export async function processImage(path: string) {
     paper.project.addLayer(layer)
   }
 
-  console.log(paper.project.layers.length)
-  let svg = paper.project.exportSVG({ asString: true }) as string
-  fs.writeFileSync("output.svg", svg)
+  return paper.project.exportSVG({ asString: true }) as string
 }
