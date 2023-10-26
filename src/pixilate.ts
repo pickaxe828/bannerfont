@@ -3,14 +3,16 @@ import fs from "fs"
 import paper from "paper"
 import quanti from "quanti"
 import canvas, { createCanvas } from "canvas"
+import { Layer } from "paper/dist/paper-core"
 
-const PIXEL_BLEED_FOR_BOOL_OP_UNITE = 0 // Unused
+const PIXEL_BLEED_FOR_BOOL_OP_UNITE = 0
+const X_OFFSET = 0
 
 function sliceInteger(integer: number, start: number, length: number) {
   return (integer >> start) & ((1 << length) - 1)
 }
 
-export async function processImage(path: string, colorNumber: number) {
+export function processImage(path: string, colorNumber: number) {
   // Canva setup
   paper.setup(new paper.Size(20, 40))
 
@@ -29,13 +31,13 @@ export async function processImage(path: string, colorNumber: number) {
   let originalImage = new paper.Raster(canva)
   let originalImageData = originalImage.getImageData(
     new paper.Rectangle(0, 0, 
-      originalImage.width  + PIXEL_BLEED_FOR_BOOL_OP_UNITE, 
-      originalImage.height + PIXEL_BLEED_FOR_BOOL_OP_UNITE
+      originalImage.width, 
+      originalImage.height
     )
   )
 
   // Quantization
-  const palette = quanti(originalImageData.data, colorNumber, 4)
+  const palette = quanti(originalImageData.data, colorNumber, 4) // 4 = RGBA
   palette.process(originalImageData.data)
 
   // Output quantized image
@@ -52,8 +54,11 @@ export async function processImage(path: string, colorNumber: number) {
       if (color.alpha === 0) { continue }
       
       let rectangle = new paper.Path.Rectangle({
-        point: [x, y],
-        size: [1, 1]
+        point: [x + X_OFFSET, y],
+        size: [
+          1 + PIXEL_BLEED_FOR_BOOL_OP_UNITE, 
+          1 + PIXEL_BLEED_FOR_BOOL_OP_UNITE
+        ]
       })
       rectangle.fillColor = color
 
@@ -68,19 +73,25 @@ export async function processImage(path: string, colorNumber: number) {
 
   // Boolean operation unite all rectangles
   for (let key of layers.keys()) {
-    layers.get(key)?.children.reduce(
-      (previous, current) => (previous as paper.Path.Rectangle).unite(current as paper.Path.Rectangle)
+    // Add merged layer to project
+    paper.project.addLayer(
+      new paper.Layer(
+        layers.get(key)?.children.reduce(
+          (previous, current) => {
+            let path = (previous as paper.Path.Rectangle).unite(current as paper.Path.Rectangle, { insert: false })
+            path.fillColor = previous.fillColor
+            return path
+          }
+        ) as paper.Path
+      )
     )
   }
 
   // Clean up
   originalImage.remove()
   quantizedImage.remove()
+  layers.forEach((layer) => layer.remove())
 
   // Export SVG
-  for (let layer of layers.values()) { 
-    paper.project.addLayer(layer)
-  }
-
   return paper.project.exportSVG({ asString: true }) as string
 }
