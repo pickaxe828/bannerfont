@@ -1,6 +1,8 @@
 import * as fs from "fs"
 
 import { processImage } from "./pixilate.ts"
+import { getName } from "./naming.ts"
+
 import Arg from "arg"
 import Path from "path"
 
@@ -21,17 +23,15 @@ const COLORNUMBER = args["--colors"] ?? 3 // Including transparent layer lmao
 async function processImageAndExport(basepath: string, file: string, colorNumber: number) {
   console.log(`Processing: ${file}`)
   let result = processImage(`${basepath}/${file}`, colorNumber)
-  console.log(Path.basename(file, Path.extname(file)))
   await fs.promises.writeFile(
-    OUTDIR + "/" + Path.basename(file, Path.extname(file)) + ".svg", 
+    OUTDIR + "/" + getName(Path.basename(file, Path.extname(file))) + ".svg",
     result
   )
 }
 
 async function processSingleFile(arg: string, colorNumber: number) {
-  let result = await processImage(arg, COLORNUMBER)
-  console.log(Path.basename(arg, Path.extname(arg)))
-  fs.writeFileSync(OUTDIR + "/" + Path.basename(arg, Path.extname(arg)) + ".svg", result)
+  let result = processImage(arg, COLORNUMBER)
+  fs.writeFileSync(OUTDIR + "/" + getName(Path.basename(arg, Path.extname(arg))) + ".svg", result)
 }
 
 async function processDirectory(directory: string, colorNumber: number, time: number) {

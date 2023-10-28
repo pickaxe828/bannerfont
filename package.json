@@ -8,6 +8,7 @@
     "node": ">=16"
   },
   "scripts": {
+    "execute": "node --loader ts-node/esm",
     "pixilate": "node --loader ts-node/esm src/main.ts"
   },
   "keywords": [],
