@@ -1,0 +1,18 @@
+/**
+ * @name BannerFont
+ * @author Pickaxe828#4395
+ * @description ClongCraft Minecraft Banner Font
+ * @version 0.1.0
+ */
+
+/* https://github.com/pickaxe828/IBEF/raw/dev/public/BannerFont.ttf */
+
+@font-face {
+    font-family: 'BannerFont';
+    src: url('https://ibef-1-i3169062.deta.app/static/BannerFont.ttf') format('truetype') tech(color-COLRv1);
+    unicode-range: U+E000-EF40;
+}
+
+span {
+    font-family: 'BannerFont', var(--font-primary);
+}
