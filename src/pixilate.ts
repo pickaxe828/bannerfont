@@ -2,11 +2,14 @@ import fs from "fs"
 
 import paper from "paper"
 import quanti from "quanti"
+import Path from "path"
 import canvas, { createCanvas } from "canvas"
 import { Layer } from "paper/dist/paper-core"
+import { off } from "process"
+
 
 const PIXEL_BLEED_FOR_BOOL_OP_UNITE = 0
-const X_OFFSET = 0
+const X_OFFSET = -20
 
 function sliceInteger(integer: number, start: number, length: number) {
   return (integer >> start) & ((1 << length) - 1)
@@ -14,7 +17,14 @@ function sliceInteger(integer: number, start: number, length: number) {
 
 export function processImage(path: string, colorNumber: number) {
   // Canva setup
-  paper.setup(new paper.Size(0, 40))
+  let offset = 0
+  if (Path.basename(path, Path.extname(path)).slice(1, 3) === "00") {
+    paper.setup(new paper.Size(20, 40))
+  }
+  else {
+    paper.setup(new paper.Size(0, 40))
+    offset = X_OFFSET
+  }
 
   // Layer setup
   let layers = new Map<string, paper.Layer>()
@@ -54,7 +64,7 @@ export function processImage(path: string, colorNumber: number) {
       if (color.alpha === 0) { continue }
       
       let rectangle = new paper.Path.Rectangle({
-        point: [x + X_OFFSET, y],
+        point: [x + offset, y],
         size: [
           1 + PIXEL_BLEED_FOR_BOOL_OP_UNITE, 
           1 + PIXEL_BLEED_FOR_BOOL_OP_UNITE

@@ -1,0 +1,10 @@
+v: 0
+micros:
+  - name: nodejs-app
+    src: .
+    engine: nodejs16
+    primary: true
+    public: true
+    commands:
+      - npm i
+    run: node index.js
