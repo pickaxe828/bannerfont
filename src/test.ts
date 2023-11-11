@@ -1,6 +1,6 @@
 import { charCode, getName } from "./naming.ts";
 
-let result = getName("412")
+let result = getName("a21")
 
 console.log(result)
 console.log(result

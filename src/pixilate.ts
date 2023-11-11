@@ -14,7 +14,7 @@ function sliceInteger(integer: number, start: number, length: number) {
 
 export function processImage(path: string, colorNumber: number) {
   // Canva setup
-  paper.setup(new paper.Size(20, 40))
+  paper.setup(new paper.Size(0, 40))
 
   // Layer setup
   let layers = new Map<string, paper.Layer>()

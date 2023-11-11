@@ -1,1 +1,0 @@
-nanoemoji --color_format cff2_colr_1 $(find out/ -name '*.svg')
