@@ -13,6 +13,9 @@ export function charCode(str: string, suffix: string) {
         .reduce((previous, current) => previous + current)
 }
 
+/**
+ * @deprecated Unused as now is using King's encoding system
+ */
 export function getName(code: string) {
     console.log(mapping["layer_code"][Number(code.slice(1))] as string)
     let result =

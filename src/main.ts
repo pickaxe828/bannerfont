@@ -1,6 +1,6 @@
 import * as fs from "fs"
 
-import { processImage } from "./pixilate.ts"
+import { processImage, exportEmptySVGs } from "./pixilate.ts"
 import { getName_King } from "./naming.ts"
 
 import Arg from "arg"
@@ -22,7 +22,7 @@ const COLORNUMBER = args["--colors"] ?? 3 // Including transparent layer lmao
 
 async function processImageAndExport(basepath: string, file: string, colorNumber: number) {
   console.log(`Processing: ${file}`)
-  let result = processImage(`${basepath}/${file}`, colorNumber)
+  let result = processImage(`${basepath}/${file}`, colorNumber, 10)
   await fs.promises.writeFile(
     OUTDIR + "/" + getName_King(Path.basename(file, Path.extname(file))) + ".svg",
     result
@@ -30,17 +30,18 @@ async function processImageAndExport(basepath: string, file: string, colorNumber
 }
 
 async function processSingleFile(arg: string, colorNumber: number) {
-  let result = processImage(arg, COLORNUMBER)
+  let result = processImage(arg, COLORNUMBER, 10)
   fs.writeFileSync(OUTDIR + "/" + getName_King(Path.basename(arg, Path.extname(arg))) + ".svg", result)
 }
 
 async function processDirectory(directory: string, colorNumber: number, time: number) {
   console.log(`Creating tasks to pixilate: ${directory}`)
   let files = fs.readdirSync(directory)
+  console.log("Start running tasks to pixilate...")
   let tasks = files.map((file) => processImageAndExport(directory, file, colorNumber))
   console.log(`Number of tasks: ${tasks.length}`)
-  console.log("Start running tasks to pixilate...")
   await Promise.allSettled(tasks) // Hehehehheehe
+  exportEmptySVGs(OUTDIR, "ucfff7")
 }
 
 let t0 = performance.now()

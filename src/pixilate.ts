@@ -15,10 +15,11 @@ function sliceInteger(integer: number, start: number, length: number) {
   return (integer >> start) & ((1 << length) - 1)
 }
 
-export function processImage(path: string, colorNumber: number) {
+export function processImage(path: string, colorNumber: number, detailedColorNumber: number) {
   // Canva setup
   let offset = 0
-  if (Path.basename(path, Path.extname(path)).slice(1, 3) === "00") {
+  let currentCode = Path.basename(path, Path.extname(path)).slice(1, 3)
+  if (currentCode === "00") {
     paper.setup(new paper.Size(20, 40))
   }
   else {
@@ -47,7 +48,7 @@ export function processImage(path: string, colorNumber: number) {
   )
 
   // Quantization
-  const palette = quanti(originalImageData.data, colorNumber, 4) // 4 = RGBA
+  const palette = quanti(originalImageData.data, (currentCode === "13" || currentCode === "14") ? detailedColorNumber : colorNumber, 4) // 4 = RGBA
   palette.process(originalImageData.data)
 
   // Output quantized image
@@ -105,3 +106,12 @@ export function processImage(path: string, colorNumber: number) {
   // Export SVG
   return paper.project.exportSVG({ asString: true }) as string
 }
+
+export async function exportEmptySVGs(directory: string, name: string) {
+  paper.setup(new paper.Size(0, 40))
+  let svg = paper.project.exportSVG({ asString: true }) as string
+  await fs.promises.writeFile(
+    directory + "/" + name + ".svg",
+    svg
+  )
+} 
