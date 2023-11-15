@@ -1,2 +1,2 @@
-# IBEF
-Indexable Banner Encoding with Font
+# UBEF
+Unindexable Banner Encoding with Font
