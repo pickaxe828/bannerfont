@@ -5,6 +5,4 @@ nanoemoji \
     --width 0 \
     --transform "translate(-20, 0)" \
     --config_file build/Font.toml \
-    --fea_file build/Font.fea \
-&&
-cp build/Font.ttf public/font/BannerFont.ttf
+    --fea_file build/Font.fea
