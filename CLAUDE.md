@@ -58,11 +58,13 @@ Source PNGs live in `images/` (the README says `banners/` — it is stale; `gene
 
 `src/main.ts` fans this out over the directory with `Promise.allSettled`, then writes the geometry-free glyphs via `exportEmptySVGs`: `ucfff7.svg`, the 128 space glyphs of U+F000–U+F07F, and `ue00c.svg` (see below). Those are written one at a time, not concurrently — `paper.setup()` replaces the single global `paper.project`, so parallel exports would race.
 
-**Stage 2 — `generate_font.sh`**: `nanoemoji --color_format glyf_colr_1` compiles the SVGs into `build/Font.ttf` (config/feature files land in `build/Font.toml`, `Font.fea`, `Font.glyphmap`). That is the final output — nothing is copied anywhere afterwards.
+**Stage 2 — `generate_font.sh`**: `nanoemoji --color_format glyf_colr_1` compiles the SVGs into `build/Font.ttf` (config/feature files land in `build/Font.toml`, `Font.fea`, `Font.glyphmap`).
+
+**Stage 3 — `postprocess_font.py`**, run by `generate_font.sh` straight after nanoemoji: strips U+0020 from `cmap` (see "ASCII coverage" below). `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
 
 ### Glyph naming and stacking — the two things that break easily
 
-**Naming.** `getName_King` in `src/naming.ts` maps `xyy` → `ue` + `xyy`, i.e. filename `a21.png` → glyph `uea21` → **U+EA21**. So the whole set occupies **U+E000–U+EF42**, which is exactly the `unicode-range` in `BannerFont.theme.css`. Changing the naming scheme means changing that CSS too. `getName` (the older mnemonic scheme built from `mappings.json`) is deprecated and unused.
+**Naming.** `getName_King` in `src/naming.ts` maps `xyy` → `ue` + `xyy`, i.e. filename `a21.png` → glyph `uea21` → **U+EA21**. So the whole set occupies **U+E000–U+EF42**. Changing the naming scheme means changing `BannerFont.theme.css` too — and note its `unicode-range` is currently `U+E000-EF40`, which is **already too narrow**: it misses `uEF41`/`uEF42` (purple's two Minecraft 1.21 patterns), the whole U+F000–U+F07F space block, and U+CFFF7. Codepoints outside the declared range never use this font at all, whatever the built `cmap` says. `getName` (the older mnemonic scheme built from `mappings.json`) is deprecated and unused.
 
 **Stacking / offsets.** A rendered banner is a *base* glyph followed by *overlay pattern* glyphs that composite in place, so every overlay must land back on top of the base:
 
@@ -85,6 +87,17 @@ Net effect: within one banner cell base and overlays both paint over the same �
 Per the ClongCraft PUA allocation, `U+F040 + x` is a space of `x` banners, so the block runs U+F000 (−64) … U+F07F (+63); `U+E00C` is the `SPACE` control character, an alias for `U+F041` (one banner). These are emitted by `exportEmptySVGs(dir, name, banners)` — the same empty-project export that writes `ucfff7.svg`, but with a canvas of `Size(banners * 20, 40)`. Because of the advance formula above, an empty glyph `n` banners wide *is* a space of `n` banners; no geometry is involved. `banners = 0` reproduces the original zero-width `ucfff7` behaviour.
 
 **Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`) added after nanoemoji runs — nanoemoji regenerates `build/Font.fea` itself, so it has to be a post-processing step on `build/Font.ttf`.
+
+### ASCII coverage / .notdef
+
+The font must not cover ASCII at all. Almost none of it needs doing — nothing maps A–Z, digits or punctuation, so those already resolve to `.notdef` (glyph id 0). **U+0020 is the single exception**: nanoemoji unconditionally creates a blank glyph, maps it to U+0020 and parks it at gid1 ("Win 10 Chrome likes a blank gid1"), so an ASCII space would render from this font as a real invisible glyph. `postprocess_font.py` deletes that one cmap entry after every build. Verify with `hb-shape build/Font.ttf "Hello World"` — every cluster should be `gid0`.
+
+The glyph is only *unmapped*, not deleted; removing it would renumber every following glyph and discard nanoemoji's Chrome workaround.
+
+Two things this does **not** do, and cannot:
+
+- It removes *coverage*, which is not the same as forcing a visible tofu. A browser that cannot find a codepoint in this font falls back to the next font in the CSS stack, and draws `.notdef` only when nothing in the stack covers it.
+- Mapping a codepoint to glyph id 0 in `cmap` is not a way around that — HarfBuzz treats a nominal glyph of 0 as "not covered", identically to an absent entry. Actually drawing a box for arbitrary text would mean mapping it to a real box-shaped glyph, which is not `.notdef`.
 
 ### Per-pattern exceptions
 
