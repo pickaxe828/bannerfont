@@ -31,6 +31,8 @@ TypeScript runs through **tsx** (`pnpm pixilate` → `tsx src/main.ts`); nothing
 
 **`canvas` is a native module and pnpm 10 blocks postinstall scripts by default.** `package.json` declares `pnpm.onlyBuiltDependencies: ["canvas", "esbuild"]` to permit it. If `pnpm install` ever prints `Ignored build scripts: canvas`, the binary is missing and *every* entry point dies with a confusing `ERR_INTERNAL_ASSERTION` from Node's CJS loader rather than a sensible "module not found" — pnpm won't re-run scripts for already-installed packages, so fix an existing tree with `pnpm rebuild canvas`. Since canvas 3 this installs a **prebuilt** binary (v2 used node-pre-gyp and compiled from source, needing Homebrew cairo/pango/pixman).
 
+**`jsdom` is a hard runtime requirement of `paper` that `paper` does not declare.** `paper`'s Node shim (`dist/node/self.js`) does `try { require('jsdom') } catch {}` and, when the module is absent, **silently** falls back to a stub `self` with no `document`. Every `exportSVG()` then dies with `TypeError: Cannot read properties of undefined (reading 'createElementNS')` — and because `processDirectory` collects tasks with `Promise.allSettled`, that failure is swallowed and the run reports success with an empty `./out`. `jsdom` is therefore an explicit dependency in `package.json`; do not remove it because "nothing imports it".
+
 `tsconfig.json` must keep `"types": ["node"]`. TypeScript 7 does not auto-discover `@types/node` through pnpm's symlinked layout, and without it every `fs`/`path` import fails with `TS2591` plus cascading implicit-`any` errors.
 
 Do not reintroduce `ts-node` — its ESM loader is unmaintained and dies with `ERR_INTERNAL_ASSERTION` on Node ≥ 22, and it drags in an unpinned `typescript` peer it cannot drive. Note that tsx uses esbuild, which strips types **without checking them**, so a broken `pnpm typecheck` never fails the font build — and a green build never implies types are sound.
@@ -54,7 +56,7 @@ Source PNGs live in `images/` (the README says `banners/` — it is stale; `gene
 4. **Boolean-unite** each colour's rectangles into a single path. This is the polygon-count reduction — quantizing first is what makes the unite cheap and the output small.
 5. `exportSVG` → `./out/<glyphname>.svg`.
 
-`src/main.ts` fans this out over the directory with `Promise.allSettled`, then writes one extra empty glyph (`ucfff7.svg`) via `exportEmptySVGs`.
+`src/main.ts` fans this out over the directory with `Promise.allSettled`, then writes the geometry-free glyphs via `exportEmptySVGs`: `ucfff7.svg`, the 128 space glyphs of U+F000–U+F07F, and `ue00c.svg` (see below). Those are written one at a time, not concurrently — `paper.setup()` replaces the single global `paper.project`, so parallel exports would race.
 
 **Stage 2 — `generate_font.sh`**: `nanoemoji --color_format glyf_colr_1` compiles the SVGs into `build/Font.ttf` (config/feature files land in `build/Font.toml`, `Font.fea`, `Font.glyphmap`). That is the final output — nothing is copied anywhere afterwards.
 
@@ -62,13 +64,27 @@ Source PNGs live in `images/` (the README says `banners/` — it is stale; `gene
 
 **Naming.** `getName_King` in `src/naming.ts` maps `xyy` → `ue` + `xyy`, i.e. filename `a21.png` → glyph `uea21` → **U+EA21**. So the whole set occupies **U+E000–U+EF42**, which is exactly the `unicode-range` in `BannerFont.theme.css`. Changing the naming scheme means changing that CSS too. `getName` (the older mnemonic scheme built from `mappings.json`) is deprecated and unused.
 
-**Stacking / offsets.** A rendered banner is a *base* glyph followed by *overlay pattern* glyphs that composite in place, so every glyph is zero-advance and every glyph must land on the same x-range:
+**Stacking / offsets.** A rendered banner is a *base* glyph followed by *overlay pattern* glyphs that composite in place, so every overlay must land back on top of the base:
 
 - Pattern `00` (base): Paper canvas `Size(20, 40)`, rectangles at `x + 0`.
-- All other patterns: Paper canvas `Size(0, 40)`, rectangles at `x + X_OFFSET` where `X_OFFSET = -20`.
+- All other patterns: Paper canvas `Size(0, 40)`, rectangles at `x + X_OFFSET` where `X_OFFSET = -BANNER_WIDTH` = `-20`.
 - `generate_font.sh` then applies `--width 0` and `--transform "translate(-20, 0)"` globally, plus `--noclip_to_viewbox` so the negatively-positioned overlay geometry survives.
 
-Net effect: base and overlays both end up over the same −20…0 box with no advance. Touching `X_OFFSET`, the canvas sizes, or the nanoemoji `--width`/`--transform`/`--noclip_to_viewbox` flags without touching the others will silently misalign or clip glyphs.
+**The advance width is not zero, and it is not set by `--width`.** nanoemoji's `_advance_width` is
+
+```
+max(--width, (ascender - descender) * viewBox.w / viewBox.h)
+```
+
+so with `--width 0` and the default 950 / −250 metrics, a canvas of height 40 gives **advance = 30 × viewBox.w**. The base (`Size(20, 40)`) therefore advances **600 units = one banner**; overlays (`Size(0, 40)`) advance **0**. Verify with `hmtx` in the built font, not by reading the flags.
+
+Net effect: within one banner cell base and overlays both paint over the same −600…0 font-unit box, and the base's 600-unit advance is what steps the pen to the next cell. Touching `X_OFFSET`, the canvas sizes, or the nanoemoji `--width`/`--transform`/`--noclip_to_viewbox` flags without touching the others will silently misalign or clip glyphs.
+
+### The space block (U+F000–U+F07F) and U+E00C
+
+Per the ClongCraft PUA allocation, `U+F040 + x` is a space of `x` banners, so the block runs U+F000 (−64) … U+F07F (+63); `U+E00C` is the `SPACE` control character, an alias for `U+F041` (one banner). These are emitted by `exportEmptySVGs(dir, name, banners)` — the same empty-project export that writes `ucfff7.svg`, but with a canvas of `Size(banners * 20, 40)`. Because of the advance formula above, an empty glyph `n` banners wide *is* a space of `n` banners; no geometry is involved. `banners = 0` reproduces the original zero-width `ucfff7` behaviour.
+
+**Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`) added after nanoemoji runs — nanoemoji regenerates `build/Font.fea` itself, so it has to be a post-processing step on `build/Font.ttf`.
 
 ### Per-pattern exceptions
 

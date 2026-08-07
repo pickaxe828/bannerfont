@@ -20,6 +20,14 @@ const args = Arg(
 const OUTDIR = args["--output"] ?? "./out"
 const COLORNUMBER = args["--colors"] ?? 3 // Including transparent layer lmao
 
+// Space block, per the ClongCraft PUA allocation: U+F040 + x is a space of x banners,
+// so the block runs from U+F000 (-64 banners) to U+F07F (+63 banners).
+const SPACE_ORIGIN = 0xf040
+const SPACE_FIRST = 0xf000
+const SPACE_LAST = 0xf07f
+// U+E00C is the SPACE control character, an alias for U+F041 (one banner).
+const SPACE_CONTROL_CHARACTER = 0xe00c
+
 // Not tracked in git, so a fresh clone has no ./out to write into
 fs.mkdirSync(OUTDIR, { recursive: true })
 
@@ -37,6 +45,15 @@ async function processSingleFile(arg: string, colorNumber: number) {
   fs.writeFileSync(OUTDIR + "/" + getName_King(Path.basename(arg, Path.extname(arg))) + ".svg", result)
 }
 
+// Written one at a time: paper.setup() replaces the single global paper.project, so
+// concurrent exports would race each other.
+async function exportSpaceSVGs(directory: string) {
+  for (let codepoint = SPACE_FIRST; codepoint <= SPACE_LAST; codepoint++) {
+    await exportEmptySVGs(directory, "u" + codepoint.toString(16), codepoint - SPACE_ORIGIN)
+  }
+  await exportEmptySVGs(directory, "u" + SPACE_CONTROL_CHARACTER.toString(16), 1)
+}
+
 async function processDirectory(directory: string, colorNumber: number, time: number) {
   console.log(`Creating tasks to pixilate: ${directory}`)
   let files = fs.readdirSync(directory)
@@ -44,7 +61,8 @@ async function processDirectory(directory: string, colorNumber: number, time: nu
   let tasks = files.map((file) => processImageAndExport(directory, file, colorNumber))
   console.log(`Number of tasks: ${tasks.length}`)
   await Promise.allSettled(tasks) // Hehehehheehe
-  exportEmptySVGs(OUTDIR, "ucfff7")
+  await exportEmptySVGs(OUTDIR, "ucfff7")
+  await exportSpaceSVGs(OUTDIR)
 }
 
 let t0 = performance.now()

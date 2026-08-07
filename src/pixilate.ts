@@ -7,7 +7,11 @@ import canvas, { createCanvas } from "canvas"
 
 
 const PIXEL_BLEED_FOR_BOOL_OP_UNITE = 0
-const X_OFFSET = -20
+// One banner is 20x40. nanoemoji derives the advance width from the viewBox aspect
+// ratio (see exportEmptySVGs), so these two numbers also set the per-glyph advance.
+export const BANNER_WIDTH = 20
+export const BANNER_HEIGHT = 40
+const X_OFFSET = -BANNER_WIDTH
 
 function sliceInteger(integer: number, start: number, length: number) {
   return (integer >> start) & ((1 << length) - 1)
@@ -18,10 +22,10 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
   let offset = 0
   let currentCode = Path.basename(path, Path.extname(path)).slice(1, 3)
   if (currentCode === "00") {
-    paper.setup(new paper.Size(20, 40))
+    paper.setup(new paper.Size(BANNER_WIDTH, BANNER_HEIGHT))
   }
   else {
-    paper.setup(new paper.Size(0, 40))
+    paper.setup(new paper.Size(0, BANNER_HEIGHT))
     offset = X_OFFSET
   }
 
@@ -105,11 +109,24 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
   return paper.project.exportSVG({ asString: true }) as string
 }
 
-export async function exportEmptySVGs(directory: string, name: string) {
-  paper.setup(new paper.Size(0, 40))
+/**
+ * Write a glyph with no geometry, `banners` banners wide.
+ *
+ * nanoemoji sets the advance width to
+ *   max(--width, (ascender - descender) * viewBox.w / viewBox.h)
+ * and generate_font.sh passes `--width 0`, so with the default 950/-250 metrics a
+ * viewBox of `20n x 40` compiles to an advance of exactly `n * 600` units - i.e. an
+ * empty canvas `n` banners wide *is* a space of `n` banners. `banners = 0` reproduces
+ * the original zero-width behaviour used by the U+CFFF7 negative-space character.
+ *
+ * A viewBox cannot be negative and TrueType advance widths are unsigned, so negative
+ * `banners` clamps to zero here; a backwards space has to come from GPOS instead.
+ */
+export async function exportEmptySVGs(directory: string, name: string, banners: number = 0) {
+  paper.setup(new paper.Size(Math.max(0, banners) * BANNER_WIDTH, BANNER_HEIGHT))
   let svg = paper.project.exportSVG({ asString: true }) as string
   await fs.promises.writeFile(
     directory + "/" + name + ".svg",
     svg
   )
-} 
+}
