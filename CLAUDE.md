@@ -81,7 +81,9 @@ Both exceptions key off `currentCode`, the `yy` slice of the filename — filena
 
 `.gitignore` excludes `build/`, `*.svg`, and `images/**`, so build output and generated SVGs are not tracked. `images/` is partly tracked from before that rule was added — don't "fix" this by mass-adding or mass-removing. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
 
-`setup.sh`/`shell.sh` are leftovers from the discontinued Deta Space hosting and still reference `deta.dev` / `/home/gitpod/.detaspace`. `BannerFont.theme.css` also still points its `src:` at the dead `ibef-1-i3169062.deta.app` URL, and the GitHub raw URL in its comment points at the now-deleted `public/BannerFont.ttf`. Both are unresolved.
+The Deta Space hosting is gone: `public/`, `shell.sh`, and `setup.sh`'s Deta lines have all been removed. `setup.sh` now only bootstraps pnpm and nanoemoji, duplicating the README's prerequisites.
+
+**Still unresolved:** `BannerFont.theme.css` points its `src:` at the dead `ibef-1-i3169062.deta.app` URL, and the GitHub raw URL in its comment points at the deleted `public/BannerFont.ttf`. There is no hosted font and no tracked `.ttf`, so the theme currently loads nothing — that needs a hosting decision, not a code change.
 
 ## Commits
 
