@@ -86,6 +86,12 @@ Per the ClongCraft PUA allocation, `U+F040 + x` is a space of `x` banners, so th
 
 **Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`). Now that stage 2 is `build_font.py`, that belongs in the `FontBuilder` assembly (`setupGlyphOrder` … then a GPOS lookup) rather than a post-processing step.
 
+### The control gaps (U+E00A–U+E00F, U+E01A–U+E01F)
+
+A banner glyph is `ue` + colour hex + pattern **decimal**, so no banner ever lands on a codepoint whose last two digits are `0a`–`0f` or `1a`–`1f`. `exportControlSVGs` in `src/main.ts` fills those two ranges with zero-width empty glyphs, so each control codepoint maps to a real glyph instead of tofu. U+E00C is skipped there — `exportSpaceSVGs` already gives it one banner of advance.
+
+Only colour `0`'s gaps are covered. The same gaps exist for every other colour (U+E10A–E10F, U+E11A–E11F, and so on) and are still unmapped.
+
 ### ASCII coverage / .notdef
 
 The font must not cover ASCII at all, so that everything including the ASCII space resolves to `.notdef` (glyph id 0). `build_font.py` simply never puts U+0020 in `cmap`. Verify with `hb-shape build/Font.ttf "Hello World"` — every cluster should be `gid0`.

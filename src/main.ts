@@ -28,6 +28,16 @@ const SPACE_LAST = 0xf07f
 // U+E00C is the SPACE control character, an alias for U+F041 (one banner).
 const SPACE_CONTROL_CHARACTER = 0xe00c
 
+// Control characters. A banner glyph is `ue` + colour hex + pattern *decimal*, so no
+// banner ever lands on a codepoint whose last two digits are 0a-0f or 1a-1f. The
+// ClongCraft allocation reserves those gaps for control characters; they get empty,
+// zero-width glyphs so each one maps to a real glyph instead of tofu. U+E00C is the
+// exception - exportSpaceSVGs already gives it one banner of advance.
+const CONTROL_RANGES: [number, number][] = [
+  [0xe00a, 0xe00f],
+  [0xe01a, 0xe01f],
+]
+
 // Not tracked in git, so a fresh clone has no ./out to write into
 fs.mkdirSync(OUTDIR, { recursive: true })
 
@@ -54,6 +64,16 @@ async function exportSpaceSVGs(directory: string) {
   await exportEmptySVGs(directory, "u" + SPACE_CONTROL_CHARACTER.toString(16), 1)
 }
 
+// Same one-at-a-time rule as exportSpaceSVGs: paper.setup() is global.
+async function exportControlSVGs(directory: string) {
+  for (let [first, last] of CONTROL_RANGES) {
+    for (let codepoint = first; codepoint <= last; codepoint++) {
+      if (codepoint === SPACE_CONTROL_CHARACTER) { continue }
+      await exportEmptySVGs(directory, "u" + codepoint.toString(16), 0)
+    }
+  }
+}
+
 async function processDirectory(directory: string, colorNumber: number, time: number) {
   console.log(`Creating tasks to pixilate: ${directory}`)
   let files = fs.readdirSync(directory)
@@ -63,6 +83,7 @@ async function processDirectory(directory: string, colorNumber: number, time: nu
   await Promise.allSettled(tasks) // Hehehehheehe
   await exportEmptySVGs(OUTDIR, "ucfff7")
   await exportSpaceSVGs(OUTDIR)
+  await exportControlSVGs(OUTDIR)
 }
 
 let t0 = performance.now()
