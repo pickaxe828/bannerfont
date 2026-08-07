@@ -1,1 +1,1 @@
-rm -rf out/*
+rm -rf ./out && mkdir -p ./out

@@ -20,6 +20,9 @@ const args = Arg(
 const OUTDIR = args["--output"] ?? "./out"
 const COLORNUMBER = args["--colors"] ?? 3 // Including transparent layer lmao
 
+// Not tracked in git, so a fresh clone has no ./out to write into
+fs.mkdirSync(OUTDIR, { recursive: true })
+
 async function processImageAndExport(basepath: string, file: string, colorNumber: number) {
   console.log(`Processing: ${file}`)
   let result = processImage(`${basepath}/${file}`, colorNumber, 10)
