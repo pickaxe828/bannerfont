@@ -12,13 +12,10 @@
         "skipLibCheck": true,
         "esModuleInterop": true,
         "allowImportingTsExtensions": true,
+        "types": [
+            "node"
+        ],
         "noEmit": true,
-    },
-    "ts-node": {
-        "experimentalSpecifierResolution": "node",
-        "ignoreDiagnostics": [
-            1308
-        ]
     },
     "include": [
         "./**/*.ts"

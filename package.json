@@ -5,26 +5,32 @@
   "exports": "./index.js",
   "type": "module",
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "scripts": {
-    "execute": "node --loader ts-node/esm",
-    "pixilate": "node --loader ts-node/esm src/main.ts"
+    "execute": "tsx",
+    "pixilate": "tsx src/main.ts",
+    "typecheck": "tsc"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@types/node": "^20.8.6",
     "arg": "^5.0.2",
-    "canvas": "^2.11.2",
-    "jimp": "^0.22.10",
+    "canvas": "^3.2.3",
     "paper": "^0.12.17",
-    "paper-jsdom": "^0.12.17",
-    "quanti": "^1.0.8",
-    "ts-node": "^10.9.1"
+    "quanti": "^1.0.8"
   },
   "devDependencies": {
-    "@types/quantize": "^1.0.0"
-  }
+    "@types/node": "^24.13.3",
+    "tsx": "^4.23.9",
+    "typescript": "^7.0.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "canvas",
+      "esbuild"
+    ]
+  },
+  "packageManager": "pnpm@10.13.1+sha512.37ebf1a5c7a30d5fabe0c5df44ee8da4c965ca0c5af3dbab28c3a1681b70a256218d05c81c9c0dcf767ef6b8551eb5b960042b9ed4300c59242336377e01cfad"
 }
