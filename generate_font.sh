@@ -1,11 +1,10 @@
-nanoemoji \
-    --color_format glyf_colr_1 $(find out/ -name '*.svg') \
-    --family BannerFont \
-    --noclip_to_viewbox \
-    --width 0 \
-    --transform "translate(-20, 0)" \
-    --config_file build/Font.toml \
-    --fea_file build/Font.fea
-
-# nanoemoji always maps U+0020 to a blank glyph; strip it so ASCII is fully uncovered.
-python3 postprocess_font.py build/Font.ttf
+# Stage 2: compile ./out/*.svg into build/Font.ttf.
+#
+# This used to invoke nanoemoji, which is a ninja generator and spawns one picosvg
+# plus one write_part_file process per SVG -- ~1640 Python interpreter startups for
+# a full build, ~420s of CPU. build_font.py does the same job in one process with
+# fontTools (which nanoemoji is itself built on), producing a font verified
+# equivalent: identical cmap, identical advances, identical COLR paints and palette.
+#
+# It also never maps U+0020, so postprocess_font.py is no longer needed.
+python3 build_font.py out build/Font.ttf

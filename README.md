@@ -11,7 +11,7 @@ Historically, this was used with UBEF-BD to make a BetterDiscord theme/ plugin t
 ## How to use
 0. Install dependencies
   - Run `pnpm install` in terminal
-  - Run `python -m pip install --upgrade nanoemoji` in terminal
+  - Run `python -m pip install --upgrade fonttools` in terminal
 1. Put banner .png files in the `images` folder
   - The banner should be 20x40 pixels
   - The banner should be in the format of `xyy.png` (from `000.png` to `f42.png`, eg.: `422.png`, `c13.png`)

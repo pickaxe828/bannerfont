@@ -12,7 +12,7 @@ There is no runtime app here — the repo is a one-shot asset pipeline plus the 
 
 ```sh
 pnpm install                                    # Node deps
-python -m pip install --upgrade nanoemoji       # font compiler (required, not in package.json)
+python -m pip install --upgrade fonttools       # font compiler (required, not in package.json)
 
 sh generate_full.sh          # full build: PNGs -> SVGs -> build/Font.ttf
 pnpm pixilate images/        # stage 1 only: raster -> vector SVGs into ./out
@@ -58,9 +58,11 @@ Source PNGs live in `images/` (the README says `banners/` — it is stale; `gene
 
 `src/main.ts` fans this out over the directory with `Promise.allSettled`, then writes the geometry-free glyphs via `exportEmptySVGs`: `ucfff7.svg`, the 128 space glyphs of U+F000–U+F07F, and `ue00c.svg` (see below). Those are written one at a time, not concurrently — `paper.setup()` replaces the single global `paper.project`, so parallel exports would race.
 
-**Stage 2 — `generate_font.sh`**: `nanoemoji --color_format glyf_colr_1` compiles the SVGs into `build/Font.ttf` (config/feature files land in `build/Font.toml`, `Font.fea`, `Font.glyphmap`).
+**Stage 2 — `build_font.py`**, invoked by `generate_font.sh`: compiles `./out/*.svg` into `build/Font.ttf` in **one process** with fontTools. `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
 
-**Stage 3 — `postprocess_font.py`**, run by `generate_font.sh` straight after nanoemoji: strips U+0020 from `cmap` (see "ASCII coverage" below). `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
+This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
+
+The replacement was verified against a nanoemoji-built reference on the same SVGs: identical `cmap` (818 entries, no differences), **zero advance mismatches**, identical COLR paint structure, palette values and alphas, and `hb-view` renders of all 688 banner glyphs agreeing to within 2/255 on ~0.04 % of pixels (antialiasing rounding).
 
 ### Glyph naming and stacking — the two things that break easily
 
@@ -70,29 +72,27 @@ Source PNGs live in `images/` (the README says `banners/` — it is stale; `gene
 
 - Pattern `00` (base): Paper canvas `Size(20, 40)`, rectangles at `x + 0`.
 - All other patterns: Paper canvas `Size(0, 40)`, rectangles at `x + X_OFFSET` where `X_OFFSET = -BANNER_WIDTH` = `-20`.
-- `generate_font.sh` then applies `--width 0` and `--transform "translate(-20, 0)"` globally, plus `--noclip_to_viewbox` so the negatively-positioned overlay geometry survives.
+- `build_font.py` maps the viewBox onto the ascender…descender band (`SCALE = 30` font units per canvas unit) and applies `X_NUDGE = -20` **in font units** — this is what nanoemoji's `--transform "translate(-20, 0)"` did, and it is a small global nudge, *not* the banner-width offset. The alignment comes from `X_OFFSET` in canvas space.
 
-**The advance width is not zero, and it is not set by `--width`.** nanoemoji's `_advance_width` is
+**The advance width is not zero.** It is `30 × viewBox.w`, inherited from nanoemoji's `_advance_width` = `max(--width, (ascender − descender) × viewBox.w / viewBox.h)` with `--width 0` and 950 / −250 metrics. The base (`Size(20, 40)`) therefore advances **600 units = one banner**; overlays (`Size(0, 40)`) advance **0**. Verify with `hmtx` in the built font.
 
-```
-max(--width, (ascender - descender) * viewBox.w / viewBox.h)
-```
+Net effect: within one banner cell base and overlays both paint over the same −620…−20 font-unit box, and the base's 600-unit advance is what steps the pen to the next cell. Touching `X_OFFSET`, the canvas sizes, or `SCALE`/`X_NUDGE` without touching the others will silently misalign glyphs.
 
-so with `--width 0` and the default 950 / −250 metrics, a canvas of height 40 gives **advance = 30 × viewBox.w**. The base (`Size(20, 40)`) therefore advances **600 units = one banner**; overlays (`Size(0, 40)`) advance **0**. Verify with `hmtx` in the built font, not by reading the flags.
-
-Net effect: within one banner cell base and overlays both paint over the same −600…0 font-unit box, and the base's 600-unit advance is what steps the pen to the next cell. Touching `X_OFFSET`, the canvas sizes, or the nanoemoji `--width`/`--transform`/`--noclip_to_viewbox` flags without touching the others will silently misalign or clip glyphs.
+**`lsb` must equal each glyph's `xMin`.** TrueType rasterizers shift an outline by `(lsb − xMin)`. The overlay shapes have `xMin = −620`, so leaving `lsb` at 0 slides every overlay a full banner to the right — and because the clip box is computed from the true ink bounds, the displaced geometry then falls outside it and **the overlays vanish entirely**. This produces a font that passes every structural check (identical advances, bounds, paints, palette) while rendering only the bases. `build_font.py` reads `xMin` back from the compiled `glyf` and sets `lsb` from it.
 
 ### The space block (U+F000–U+F07F) and U+E00C
 
 Per the ClongCraft PUA allocation, `U+F040 + x` is a space of `x` banners, so the block runs U+F000 (−64) … U+F07F (+63); `U+E00C` is the `SPACE` control character, an alias for `U+F041` (one banner). These are emitted by `exportEmptySVGs(dir, name, banners)` — the same empty-project export that writes `ucfff7.svg`, but with a canvas of `Size(banners * 20, 40)`. Because of the advance formula above, an empty glyph `n` banners wide *is* a space of `n` banners; no geometry is involved. `banners = 0` reproduces the original zero-width `ucfff7` behaviour.
 
-**Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`) added after nanoemoji runs — nanoemoji regenerates `build/Font.fea` itself, so it has to be a post-processing step on `build/Font.ttf`.
+**Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`). Now that stage 2 is `build_font.py`, that belongs in the `FontBuilder` assembly (`setupGlyphOrder` … then a GPOS lookup) rather than a post-processing step.
 
 ### ASCII coverage / .notdef
 
-The font must not cover ASCII at all. Almost none of it needs doing — nothing maps A–Z, digits or punctuation, so those already resolve to `.notdef` (glyph id 0). **U+0020 is the single exception**: nanoemoji unconditionally creates a blank glyph, maps it to U+0020 and parks it at gid1 ("Win 10 Chrome likes a blank gid1"), so an ASCII space would render from this font as a real invisible glyph. `postprocess_font.py` deletes that one cmap entry after every build. Verify with `hb-shape build/Font.ttf "Hello World"` — every cluster should be `gid0`.
+The font must not cover ASCII at all, so that everything including the ASCII space resolves to `.notdef` (glyph id 0). `build_font.py` simply never puts U+0020 in `cmap`. Verify with `hb-shape build/Font.ttf "Hello World"` — every cluster should be `gid0`.
 
-The glyph is only *unmapped*, not deleted; removing it would renumber every following glyph and discard nanoemoji's Chrome workaround.
+It still keeps a blank glyph at gid1 (`.blank`, uncmapped), because nanoemoji did: *"Win 10 Chrome likes a blank gid1"*.
+
+Historical note: under nanoemoji this needed a separate `postprocess_font.py` stage, because nanoemoji unconditionally created that blank glyph **and mapped it to U+0020** — the font's only non-PUA cmap entry. That script is gone; the behaviour is now inherent.
 
 Two things this does **not** do, and cannot:
 
@@ -110,7 +110,7 @@ Both exceptions key off `currentCode`, the `yy` slice of the filename — filena
 
 `.gitignore` excludes `build/`, `*.svg`, and `images/**`, so build output and generated SVGs are not tracked. `images/` is partly tracked from before that rule was added — don't "fix" this by mass-adding or mass-removing. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
 
-The Deta Space hosting is gone: `public/`, `shell.sh`, and `setup.sh`'s Deta lines have all been removed. `setup.sh` now only bootstraps pnpm and nanoemoji, duplicating the README's prerequisites.
+The Deta Space hosting is gone: `public/`, `shell.sh`, and `setup.sh`'s Deta lines have all been removed. `setup.sh` now only bootstraps pnpm and fontTools, duplicating the README's prerequisites.
 
 **Still unresolved:** `BannerFont.theme.css` points its `src:` at the dead `ibef-1-i3169062.deta.app` URL, and the GitHub raw URL in its comment points at the deleted `public/BannerFont.ttf`. There is no hosted font and no tracked `.ttf`, so the theme currently loads nothing — that needs a hosting decision, not a code change.
 
