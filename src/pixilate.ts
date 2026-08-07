@@ -4,8 +4,6 @@ import paper from "paper"
 import quanti from "quanti"
 import Path from "path"
 import canvas, { createCanvas } from "canvas"
-import { Layer } from "paper/dist/paper-core"
-import { off } from "process"
 
 
 const PIXEL_BLEED_FOR_BOOL_OP_UNITE = 0
