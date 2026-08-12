@@ -80,7 +80,9 @@ The replacement was verified against a nanoemoji-built reference on the same SVG
 
 ### Glyph naming and stacking — the two things that break easily
 
-**Naming.** `getName_King` in `src/naming.ts` maps `xyy` → `ue` + `xyy`, i.e. filename `a21.png` → glyph `uea21` → **U+EA21**. So the whole set occupies **U+E000–U+EF42**. Changing the naming scheme means changing `BannerFont.theme.css` too — and note its `unicode-range` is currently `U+E000-EF40`, which is **already too narrow**: it misses `uEF41`/`uEF42` (purple's two Minecraft 1.21 patterns), the whole U+F000–U+F07F space block, and U+CFFF7. Codepoints outside the declared range never use this font at all, whatever the built `cmap` says. `getName` (the older mnemonic scheme built from `mappings.json`) is deprecated and unused.
+**Naming.** `getName_King` in `src/naming.ts` maps `xyy` → `ue` + `xyy`, i.e. filename `a21.png` → glyph `uea21` → **U+EA21**. So the whole set occupies **U+E000–U+EF42**. `getName` (the older mnemonic scheme built from `mappings.json`) is deprecated and unused.
+
+Any consumer that loads this font with `@font-face` must declare a `unicode-range` covering U+E000–EF42, the U+F000–F07F space block and U+CFFF7. A codepoint outside the declared range never uses the font at all, whatever the built `cmap` says — which is a silent failure, not an error.
 
 **Stacking / offsets.** A rendered banner is a *base* glyph followed by *overlay pattern* glyphs that composite in place, so every overlay must land back on top of the base:
 
@@ -132,7 +134,9 @@ Both exceptions key off `currentCode`, the `yy` slice of the filename — filena
 
 The Deta Space hosting is gone: `public/`, `shell.sh`, and `setup.sh`'s Deta lines have all been removed. `setup.sh` now only bootstraps pnpm and fontTools, duplicating the README's prerequisites.
 
-**Still unresolved:** `BannerFont.theme.css` points its `src:` at the dead `ibef-1-i3169062.deta.app` URL, and the GitHub raw URL in its comment points at the deleted `public/BannerFont.ttf`. There is no hosted font and no tracked `.ttf`, so the theme currently loads nothing — that needs a hosting decision, not a code change.
+`BannerFont.theme.css` is gone. It was a BetterDiscord theme whose `src:` pointed at the dead `ibef-1-i3169062.deta.app` URL, with a comment referencing the deleted `public/BannerFont.ttf` — so it loaded nothing. Reviving it needs a hosting decision first, then a fresh `@font-face` block, not a repair of the old file.
+
+**Still unresolved:** there is no hosted font and no tracked `.ttf`, so consumers have to build the font themselves.
 
 ## Commits
 
