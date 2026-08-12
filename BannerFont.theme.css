@@ -10,7 +10,7 @@
 @font-face {
     font-family: 'BannerFont';
     src: url('https://ibef-1-i3169062.deta.app/static/BannerFont.ttf') format('truetype') tech(color-COLRv1);
-    unicode-range: U+E000-EF40;
+    unicode-range: U+E000-EF42;
 }
 
 span {
