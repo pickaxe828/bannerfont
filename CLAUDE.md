@@ -72,19 +72,19 @@ The replacement was verified against a nanoemoji-built reference on the same SVG
 
 - Pattern `00` (base): Paper canvas `Size(20, 40)`, rectangles at `x + 0`.
 - All other patterns: Paper canvas `Size(0, 40)`, rectangles at `x + X_OFFSET` where `X_OFFSET = -BANNER_WIDTH` = `-20`.
-- `build_font.py` maps the viewBox onto the ascender…descender band (`SCALE = 30` font units per canvas unit) and applies `X_NUDGE = -20` **in font units** — this is what nanoemoji's `--transform "translate(-20, 0)"` did, and it is a small global nudge, *not* the banner-width offset. The alignment comes from `X_OFFSET` in canvas space.
+- `src/build_font.py` maps the viewBox onto the ascender…descender band (`SCALE = 30` font units per canvas unit) and applies `X_NUDGE = -20` **in font units** — this is what nanoemoji's `--transform "translate(-20, 0)"` did, and it is a small global nudge, *not* the banner-width offset. The alignment comes from `X_OFFSET` in canvas space.
 
 **The advance width is not zero.** It is `30 × viewBox.w`, inherited from nanoemoji's `_advance_width` = `max(--width, (ascender − descender) × viewBox.w / viewBox.h)` with `--width 0` and 950 / −250 metrics. The base (`Size(20, 40)`) therefore advances **600 units = one banner**; overlays (`Size(0, 40)`) advance **0**. Verify with `hmtx` in the built font.
 
 Net effect: within one banner cell base and overlays both paint over the same −620…−20 font-unit box, and the base's 600-unit advance is what steps the pen to the next cell. Touching `X_OFFSET`, the canvas sizes, or `SCALE`/`X_NUDGE` without touching the others will silently misalign glyphs.
 
-**`lsb` must equal each glyph's `xMin`.** TrueType rasterizers shift an outline by `(lsb − xMin)`. The overlay shapes have `xMin = −620`, so leaving `lsb` at 0 slides every overlay a full banner to the right — and because the clip box is computed from the true ink bounds, the displaced geometry then falls outside it and **the overlays vanish entirely**. This produces a font that passes every structural check (identical advances, bounds, paints, palette) while rendering only the bases. `build_font.py` reads `xMin` back from the compiled `glyf` and sets `lsb` from it.
+**`lsb` must equal each glyph's `xMin`.** TrueType rasterizers shift an outline by `(lsb − xMin)`. The overlay shapes have `xMin = −620`, so leaving `lsb` at 0 slides every overlay a full banner to the right — and because the clip box is computed from the true ink bounds, the displaced geometry then falls outside it and **the overlays vanish entirely**. This produces a font that passes every structural check (identical advances, bounds, paints, palette) while rendering only the bases. `src/build_font.py` reads `xMin` back from the compiled `glyf` and sets `lsb` from it.
 
 ### The space block (U+F000–U+F07F) and U+E00C
 
 Per the ClongCraft PUA allocation, `U+F040 + x` is a space of `x` banners, so the block runs U+F000 (−64) … U+F07F (+63); `U+E00C` is the `SPACE` control character, an alias for `U+F041` (one banner). These are emitted by `exportEmptySVGs(dir, name, banners)` — the same empty-project export that writes `ucfff7.svg`, but with a canvas of `Size(banners * 20, 40)`. Because of the advance formula above, an empty glyph `n` banners wide *is* a space of `n` banners; no geometry is involved. `banners = 0` reproduces the original zero-width `ucfff7` behaviour.
 
-**Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`). Now that stage 2 is `build_font.py`, that belongs in the `FontBuilder` assembly (`setupGlyphOrder` … then a GPOS lookup) rather than a post-processing step.
+**Negative spaces do not work yet.** A viewBox cannot be negative and TrueType `advanceWidth` is unsigned, so `exportEmptySVGs` clamps negative `banners` to 0 and U+F000–U+F03F all compile to a 0 advance. They are still generated so the codepoints map to a real glyph instead of tofu. Making them actually step the pen backwards requires a GPOS single-positioning adjustment (negative `XAdvance`). Now that stage 2 is `src/build_font.py`, that belongs in the `FontBuilder` assembly (`setupGlyphOrder` … then a GPOS lookup) rather than a post-processing step.
 
 ### The control gaps (U+E00A–U+E00F, U+E01A–U+E01F)
 
@@ -94,7 +94,7 @@ Only colour `0`'s gaps are covered. The same gaps exist for every other colour (
 
 ### ASCII coverage / .notdef
 
-The font must not cover ASCII at all, so that everything including the ASCII space resolves to `.notdef` (glyph id 0). `build_font.py` simply never puts U+0020 in `cmap`. Verify with `hb-shape build/Font.ttf "Hello World"` — every cluster should be `gid0`.
+The font must not cover ASCII at all, so that everything including the ASCII space resolves to `.notdef` (glyph id 0). `src/build_font.py` simply never puts U+0020 in `cmap`. Verify with `hb-shape build/Font.ttf "Hello World"` — every cluster should be `gid0`.
 
 It still keeps a blank glyph at gid1 (`.blank`, uncmapped), because nanoemoji did: *"Win 10 Chrome likes a blank gid1"*.
 
