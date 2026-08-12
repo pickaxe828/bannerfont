@@ -5,7 +5,7 @@ Historically, this was used with UBEF-BD to make a BetterDiscord theme/ plugin t
 
 ## Prerequisites
 - Python (>=3.8)
-- Node JS (>=18)
+- Node JS (>=22)
   - PNPM
 
 ## How to use
