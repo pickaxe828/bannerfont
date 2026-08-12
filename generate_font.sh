@@ -10,4 +10,9 @@
 #
 # Both paths are relative to the current directory, not to this script, so run it from
 # the repo root: `sh generate_font.sh`.
-python3 src/build_font.py out build/Font.ttf
+#
+# `uv run` resolves the interpreter and the pinned fontTools from pyproject.toml and
+# uv.lock, creating or updating .venv first if it is missing or stale. So there is no
+# separate install step, and the build cannot silently pick up whatever fontTools
+# happens to be in a global Python.
+uv run python src/build_font.py out build/Font.ttf

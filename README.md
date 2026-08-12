@@ -4,14 +4,14 @@ This repo is a simple tool convert Minecraft banners into a special font to be u
 Historically, this was used with UBEF-BD to make a BetterDiscord theme/ plugin that renders banners encodings (in the PUA range), which is to assist communication in the ClongCraft project.
 
 ## Prerequisites
-- Python (>=3.8)
+- [uv](https://docs.astral.sh/uv/) — it installs Python (>=3.11) and fontTools for you upon running this project
 - Node JS (>=22)
   - PNPM
 
 ## How to use
 0. Install dependencies
   - Run `pnpm install` in terminal
-  - Run `python -m pip install --upgrade fonttools` in terminal
+  - Run `uv sync` in terminal
 1. Put banner .png files in the `images` folder
   - The banner should be 20x40 pixels
   - The banner should be in the format of `xyy.png` (from `000.png` to `f42.png`, eg.: `422.png`, `c13.png`)

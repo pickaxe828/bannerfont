@@ -1,0 +1,21 @@
+[project]
+name = "ubef-font"
+version = "1.0.0"
+description = "Compile Minecraft banner SVGs into a COLRv1 colour font"
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Stage 2 (src/build_font.py) has exactly one dependency, and it is pinned rather than
+# floored because the pin is what makes a rebuild reproducible: fontTools decides the
+# glyf outlines, the COLR paint structure and the palette packing, so a different
+# version can change build/Font.ttf with no change in this repo.
+#
+# Verified: 4.57.0 also builds a byte-identical font, so relaxing this to
+# `fonttools>=4.57` is safe if a newer pin ever becomes inconvenient.
+dependencies = ["fonttools==4.63.0"]
+
+[tool.uv]
+# This repo is an asset pipeline, not an installable library. Without this uv tries to
+# build and install the project itself into the environment, which fails - there is no
+# package to build, only the script at src/build_font.py.
+package = false
