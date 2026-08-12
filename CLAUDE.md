@@ -50,17 +50,31 @@ Source PNGs live in `images/` (the README says `banners/` — it is stale; `gene
 
 **Stage 1 — `src/pixilate.ts` (`processImage`)**, the only nontrivial code in the repo:
 
-1. Load PNG into `node-canvas`, hand it to Paper.js as a `Raster`.
+1. Load PNG into `node-canvas` and read its pixels with `ctx.getImageData`.
 2. **Quantize** RGBA with `quanti` down to `colorNumber` colours.
-3. Emit one 1×1 `Path.Rectangle` per non-transparent pixel, bucketed into a Paper.js `Layer` keyed by colour string.
-4. **Boolean-unite** each colour's rectangles into a single path. This is the polygon-count reduction — quantizing first is what makes the unite cheap and the output small.
-5. `exportSVG` → `./out/<glyphname>.svg`.
+3. Bucket the non-transparent pixels by packed RGBA. Insertion order is scan order, and that is the order the COLR layers get painted in.
+4. **Contour-trace** each colour's pixels into one path (`traceOutline`). This is the polygon-count reduction — quantizing first is what keeps the output small.
+5. Emit the SVG string by hand → `./out/<glyphname>.svg`.
 
 `src/main.ts` fans this out over the directory with `Promise.allSettled`, then writes the geometry-free glyphs via `exportEmptySVGs`: `ucfff7.svg`, the 128 space glyphs of U+F000–U+F07F, and `ue00c.svg` (see below). Those are written one at a time, not concurrently — `paper.setup()` replaces the single global `paper.project`, so parallel exports would race.
 
-**Stage 2 — `build_font.py`**, invoked by `generate_font.sh`: compiles `./out/*.svg` into `build/Font.ttf` in **one process** with fontTools. `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
+### Why stage 1 does not use a boolean union
 
-This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
+`processImage` used to emit one 1×1 `Path.Rectangle` per pixel and reduce them with Paper.js `unite`. That was **95% of the whole build**: a linear reduce over N rectangles costs O(N²) in path segments, and stage 1 unites ~200k of them across the 688 images.
+
+No boolean geometry is needed. Every shape is an axis-aligned unit square on an integer grid, so the union is a **contour trace**, linear in pixel count. Each filled cell contributes the edges whose neighbour is empty, directed so the filled side is always on the same hand; outer boundaries then wind one way and holes the other, which is what `fill-rule="nonzero"` wants. Chaining those directed edges head-to-tail gives the loops.
+
+Measured on the 688 images: linear unite **57.4 s**, balanced-tree unite 27.5 s, trace **1.07 s**. Stage 1 as a whole went **65.3 s → 0.54 s**, and the full build **67 s → 2.0 s**.
+
+Verified equivalent, not just plausible. Running both unions over the *same* pixel buckets gave zero area difference across 1616 layers, and the two fonts rendered **pixel-identical** over all 688 banners (20.8M subpixels, zero deltas). 38 shape glyphs differ in *contour count* with identical bounding boxes — where two cells touch only at a corner the loop decomposition is ambiguous, and both choices fill the same area under `nonzero`.
+
+**Do not "optimise" this back into a parallel unite.** This machine has 4 performance cores, so threads could win at best ~4×; the trace won 54×. Worker threads are now pointless — stage 1 is 0.54 s.
+
+**Pixel reading changed with it.** The old code went through `paper.Raster.getImageData`, which draws into a scratch canvas and reads back, so every pixel with alpha < 255 took an extra premultiply/un-premultiply round trip and lost 1–2 levels per channel. Reading `ctx.getImageData` once fixes that. It is a **visible change**: 642 of 688 banners shift, worst channel delta **7/255**, 2.9% of subpixels. The new colours are the correct ones — the old output landed outside the range of colours actually present in the source PNG.
+
+**Stage 2 — `src/build_font.py`**, invoked by `generate_font.sh`: compiles `./out/*.svg` into `build/Font.ttf` in **one process** with fontTools. `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
+
+This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `src/build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
 
 The replacement was verified against a nanoemoji-built reference on the same SVGs: identical `cmap` (818 entries, no differences), **zero advance mismatches**, identical COLR paint structure, palette values and alphas, and `hb-view` renders of all 688 banner glyphs agreeing to within 2/255 on ~0.04 % of pixels (antialiasing rounding).
 
