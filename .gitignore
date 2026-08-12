@@ -6,7 +6,6 @@ build/
 
 *.svg
 build/*.ttf
-images/**
 
 **/__pycache__/
 .venv/
