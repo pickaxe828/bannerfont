@@ -47,7 +47,11 @@ Do not reintroduce `ts-node` — its ESM loader is unmaintained and dies with `E
 
 Source PNGs live in `images/`. They are **generated** by `pnpm extract` from the Mojang client jar (see stage 0) and are neither tracked nor distributed, because they are Mojang assets. Each is **20×40 px**, named `xyy.png`:
 
-- `x` — layer color, hex `0`–`f`. The real order is white, light gray, gray, black, yellow, orange, red, brown, lime, green, light blue, cyan, blue, pink, magenta, purple. `mappings.json → color_code` lists a different (wiki) order and is stale. The hex values in the Minecraft wiki "Pattern color" table (`#D87F33` for orange, and so on) are the game's `MapColor` values. They are **not** the banner tint. The tint is `DyeColor`'s texture-diffuse value (`#F9801D` for orange). The oracle PNGs equal `jar texture × DyeColor value` within 2/255, and the 16 `DyeColor` values are identical in every client jar from 1.12.2 to 26.3. The **oracle** is the 688 PNGs that were once tracked in `images/`. They now live in `oracle/`, local only and untracked, together with `oracle/compare.ts`, which checks that an extracted `images/` matches them within 2/255 per channel. It is not a `pnpm` script
+- `x` — layer color, hex `0`–`f`. The real order is white, light gray, gray, black, yellow, orange, red, brown, lime, green, light blue, cyan, blue, pink, magenta, purple. `mappings.json → color_code` lists a different (wiki) order and is stale.
+  - The hex values in the Minecraft wiki "Pattern color" table (`#D87F33` for orange, and so on) are the game's `MapColor` values. They are **not** the banner tint.
+  - The tint is `DyeColor`'s texture-diffuse value (`#F9801D` for orange). The 16 `DyeColor` values are identical in every client jar from 1.12.2 to 26.3.
+  - The **oracle** is the 688 PNGs that were once tracked in `images/`. They now live in `oracle/`, which is local only and untracked. They equal `jar texture × DyeColor value` within 2/255.
+  - `oracle/compare.ts` checks that an extracted `images/` matches the oracle within 2/255 per channel. It is local only and **not in the repo**, so it is not a `pnpm` script, and a fresh clone does not have it.
 - `yy` — pattern, decimal `00`–`42`, indexes `mappings.json → layer_code`
 
 688 files = 16 colours × 43 patterns. An older jar can yield fewer, see the missing-texture warning in stage 0.

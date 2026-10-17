@@ -65,8 +65,9 @@ MISSING_STROKE = 60      # border thickness of the .missing box, in font units
 # Layer color digit x (0-f) and pattern yy (00-42). The filename is `ue` + x + yy with yy
 # written as two *decimal* digits, which the codepoint reads as hex digits: pattern 42 is
 # U+E042, not U+E02A. That is why U+E00A-E00F and U+E01A-E01F are never banners.
+PATTERN_COUNT = 43      # patterns 00-42; equals PATTERN_TEXTURES.length in src/extract.ts
 EXPECTED_BANNER_CODEPOINTS = [0xE000 + x * 0x100 + (yy // 10) * 0x10 + yy % 10
-                              for x in range(16) for yy in range(43)]
+                              for x in range(16) for yy in range(PATTERN_COUNT)]
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
 
