@@ -115,21 +115,28 @@ export function multiplyLayer(pixels: Uint8Array | Uint8ClampedArray, rgb: numbe
   return out
 }
 
-export const CROP_X = 1
-export const CROP_Y = 1
-export const BANNER_W = 20
-export const BANNER_H = 40
+/** The front face of a banner texture: the box (1,1)-(21,41), which is a 20x40 image. */
+export const FRONT_FACE = { x: 1, y: 1, width: 20, height: 40 } as const
 
-/** Crops the front face of a banner texture, the box (1,1)-(21,41), from RGBA `pixels` that are `width` px wide. */
-export function cropFront(pixels: Uint8Array | Uint8ClampedArray, width: number): Uint8Array {
+/** Thrown by `cropFront` for a texture that cannot hold the front face. */
+export class TextureTooSmallError extends Error {}
+
+/**
+ * Crops the front face (`FRONT_FACE`) from RGBA `pixels` that are `width` px wide.
+ * `name` is the texture file, used in the error for a texture smaller than 21x41.
+ */
+export function cropFront(pixels: Uint8Array | Uint8ClampedArray, width: number, name: string): Uint8Array {
+  const { x: fx, y: fy, width: fw, height: fh } = FRONT_FACE
   const height = pixels.length / 4 / width
-  if (width < CROP_X + BANNER_W || height < CROP_Y + BANNER_H) {
-    throw new Error(`Texture is ${width}x${height}, too small to hold the ${BANNER_W}x${BANNER_H} front face`)
+  if (width < fx + fw || height < fy + fh) {
+    throw new TextureTooSmallError(
+      `Texture ${name} is ${width}x${height}, too small to hold the ${fw}x${fh} front face (needs at least ${fx + fw}x${fy + fh})`,
+    )
   }
-  const out = new Uint8Array(BANNER_W * BANNER_H * 4)
-  for (let y = 0; y < BANNER_H; y++) {
-    const from = ((y + CROP_Y) * width + CROP_X) * 4
-    out.set(pixels.subarray(from, from + BANNER_W * 4), y * BANNER_W * 4)
+  const out = new Uint8Array(fw * fh * 4)
+  for (let y = 0; y < fh; y++) {
+    const from = ((y + fy) * width + fx) * 4
+    out.set(pixels.subarray(from, from + fw * 4), y * fw * 4)
   }
   return out
 }
@@ -168,7 +175,16 @@ export async function ensureJar(cacheDir: string, version: string): Promise<stri
     throw new Error(`SHA-1 mismatch for the ${version} client jar: expected ${client.sha1}, got ${sha1}`)
   }
   fs.mkdirSync(path.dirname(jar), { recursive: true })
-  fs.writeFileSync(jar, data)
+  // Write beside the target and rename, so an interrupted write never leaves a truncated client.jar
+  // that later runs would trust. A rename within one directory is atomic.
+  const tmp = `${jar}.${process.pid}.tmp`
+  try {
+    fs.writeFileSync(tmp, data)
+    fs.renameSync(tmp, jar)
+  } catch (err) {
+    fs.rmSync(tmp, { force: true })
+    throw err
+  }
   return jar
 }
 
@@ -193,10 +209,19 @@ export async function writeLayers(
       continue
     }
     const { pixels, width } = decodePng(png)
-    const front = cropFront(pixels, width)
+    let front: Uint8Array
+    try {
+      front = cropFront(pixels, width, entry)
+    } catch (err) {
+      if (!(err instanceof TextureTooSmallError)) throw err
+      // Same as a missing texture: one warning, no PNGs for this pattern
+      warn(`Pattern ${String(yy).padStart(2, "0")} skipped: ${err.message}`)
+      missing++
+      continue
+    }
     LAYER_COLORS.forEach(({ rgb }, x) => {
       const file = path.join(outDir, `${x.toString(16)}${String(yy).padStart(2, "0")}.png`)
-      fs.writeFileSync(file, encodePng(multiplyLayer(front, rgb), BANNER_W, BANNER_H))
+      fs.writeFileSync(file, encodePng(multiplyLayer(front, rgb), FRONT_FACE.width, FRONT_FACE.height))
       written++
     })
   }

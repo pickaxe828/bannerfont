@@ -1,12 +1,13 @@
-import { test } from "node:test"
+import { test, mock } from "node:test"
 import assert from "node:assert/strict"
+import crypto from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
 import { decodePng, encodePng } from "./png.ts"
 
-import { multiplyLayer, cropFront, PATTERN_TEXTURES, textureEntryName, LAYER_COLORS, compareVersions, parseManifest, jarHasDyeValues, writeLayers, extractFromJar } from "./extract.ts"
+import { multiplyLayer, cropFront, PATTERN_TEXTURES, textureEntryName, LAYER_COLORS, compareVersions, parseManifest, jarHasDyeValues, writeLayers, extractFromJar, ensureJar, jarPath, MANIFEST_URL, FRONT_FACE } from "./extract.ts"
 
 test("multiplyLayer floors each channel as tex*dye/255 and copies alpha", () => {
   // white (F9FFFE) on a mid grey with partial alpha
@@ -26,15 +27,28 @@ test("cropFront returns the 20x40 box (1,1)-(21,41) of a 64x64 texture", () => {
   const tex = new Uint8Array(64 * 64 * 4)
   for (let y = 0; y < 64; y++)
     for (let x = 0; x < 64; x++) tex.set([x, y, 7, 255], (y * 64 + x) * 4)
-  const out = cropFront(tex, 64)
+  const out = cropFront(tex, 64, "banner/big.png")
   assert.equal(out.length, 20 * 40 * 4)
   assert.deepEqual([...out.subarray(0, 4)], [1, 1, 7, 255]) // top-left is (1,1)
   assert.deepEqual([...out.subarray(19 * 4, 20 * 4)], [20, 1, 7, 255]) // last column is x=20
   assert.deepEqual([...out.subarray(39 * 20 * 4 + 19 * 4)], [20, 40, 7, 255]) // bottom-right is (20,40)
 })
 
-test("cropFront rejects a texture too small to hold the front face", () => {
-  assert.throws(() => cropFront(new Uint8Array(16 * 16 * 4), 16))
+test("FRONT_FACE is the 20x40 box at (1,1)", () => {
+  assert.deepEqual(FRONT_FACE, { x: 1, y: 1, width: 20, height: 40 })
+})
+
+test("cropFront rejects a texture too small to hold the front face and names the file and size", () => {
+  assert.throws(
+    () => cropFront(new Uint8Array(16 * 16 * 4), 16, "banner/tiny.png"),
+    /banner\/tiny\.png.*16x16/,
+  )
+})
+
+test("cropFront accepts a texture of exactly 21x41", () => {
+  assert.equal(cropFront(new Uint8Array(21 * 41 * 4), 21, "banner/exact.png").length, 20 * 40 * 4)
+  assert.throws(() => cropFront(new Uint8Array(20 * 41 * 4), 20, "banner/narrow.png"), /20x41/)
+  assert.throws(() => cropFront(new Uint8Array(21 * 40 * 4), 21, "banner/short.png"), /21x40/)
 })
 
 test("compareVersions orders releaseTime stamps, also across UTC offsets", () => {
@@ -146,6 +160,57 @@ test("writeLayers keeps the exact tint under a very low alpha", async () => {
   // black is 1D1D21: floor(243*29/255)=27, floor(243*33/255)=31
   assert.deepEqual(readPixel(path.join(dir, "300.png")), [27, 27, 31, 3])
   fs.rmSync(dir, { recursive: true })
+})
+
+test("writeLayers treats a too-small texture like a missing one: one warning, no PNGs", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "extract-"))
+  const tiny = encodePng(new Uint8Array(16 * 16 * 4), 16, 16)
+  const warnings: string[] = []
+
+  const result = await writeLayers(
+    (entry) => (entry.endsWith("/base.png") ? solidPng(200, 100, 50, 255) : entry.endsWith("/border.png") ? tiny : undefined),
+    dir,
+    (m) => warnings.push(m),
+  )
+
+  assert.deepEqual(result, { written: 16, missing: 42 })
+  assert.equal(warnings.length, 42)
+  const small = warnings.filter((m) => m.includes("/border.png"))
+  assert.equal(small.length, 1)
+  assert.match(small[0], /16x16/)
+  assert.equal(fs.readdirSync(dir).filter((f) => /^.01\.png$/.test(f)).length, 0)
+  fs.rmSync(dir, { recursive: true })
+})
+
+test("ensureJar leaves no client.jar behind when writing the jar fails", async () => {
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "extract-cache-"))
+  const jar = Buffer.from("not really a jar")
+  const sha1 = crypto.createHash("sha1").update(jar).digest("hex")
+  const responses: Record<string, unknown> = {
+    [MANIFEST_URL]: { versions: [{ id: "1.21.2", type: "release", url: "https://example.test/v.json", releaseTime: "2024-10-22T09:58:55+00:00" }, { id: "1.12.2", type: "release", url: "https://example.test/f.json", releaseTime: "2017-09-18T08:39:46+00:00" }] },
+    "https://example.test/v.json": { downloads: { client: { url: "https://example.test/client.jar", sha1 } } },
+  }
+  const fetchMock = mock.method(globalThis, "fetch", async (url: string) =>
+    url === "https://example.test/client.jar" ? new Response(jar) : Response.json(responses[url]),
+  )
+  const realWrite = fs.writeFileSync
+  // Simulates an interrupted write: half of the bytes reach the disk, then it throws
+  const writeMock = mock.method(fs, "writeFileSync", (file: fs.PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView) => {
+    realWrite(file, (data as Buffer).subarray(0, 5))
+    throw new Error("disk full")
+  })
+  try {
+    await assert.rejects(() => ensureJar(cache, "1.21.2"), /disk full/)
+    assert.equal(fs.existsSync(jarPath(cache, "1.21.2")), false)
+    writeMock.mock.restore()
+    // A later run downloads again and succeeds
+    assert.equal(await ensureJar(cache, "1.21.2"), jarPath(cache, "1.21.2"))
+    assert.deepEqual(fs.readFileSync(jarPath(cache, "1.21.2")), jar)
+  } finally {
+    writeMock.mock.restore()
+    fetchMock.mock.restore()
+    fs.rmSync(cache, { recursive: true })
+  }
 })
 
 const LOCAL_JAR = "/Users/pickaxe828/.claude/jobs/57de1d97/tmp/mc/client.jar"
