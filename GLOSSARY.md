@@ -29,3 +29,11 @@ An empty glyph that moves the pen by a whole number of banners.
 **Control character**:
 A reserved codepoint in the gaps of the banner range that no banner can land on. It is zero-width, except the SPACE control character, which is one banner wide.
 _Avoid_: Reserved glyph, gap glyph
+
+**Entry point**:
+The single command, `bannerfont`, through which every build step and check is run.
+_Avoid_: Script, runner
+
+**Stage**:
+One step of the build: extract, pixilate or font. Each turns the previous stage's output into the next one's input.
+_Avoid_: Phase, step
