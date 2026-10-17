@@ -25,3 +25,7 @@ _Avoid_: Fixtures, golden files
 
 **Space**:
 An empty glyph that moves the pen by a whole number of banners.
+
+**Control character**:
+A reserved codepoint in the gaps of the banner range that no banner can land on. It is zero-width, except the SPACE control character, which is one banner wide.
+_Avoid_: Reserved glyph, gap glyph
