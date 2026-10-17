@@ -9,3 +9,4 @@ build/*.ttf
 
 **/__pycache__/
 .venv/
+.cache/
