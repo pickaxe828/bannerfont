@@ -14,20 +14,26 @@ There is no runtime app here — the repo is a one-shot asset pipeline plus the 
 pnpm install                                    # Node deps
 python -m pip install --upgrade fonttools       # font compiler (required, not in package.json)
 
-sh generate_full.sh          # full build: PNGs -> SVGs -> build/Font.ttf
+sh generate_full.sh          # full build: jar -> PNGs -> SVGs -> build/Font.ttf
+sh generate_full.sh --mc-version 1.20.4   # arguments are forwarded to pnpm extract
+pnpm extract                 # stage 0 only: Mojang client jar -> 688 PNGs in ./images
 pnpm pixilate images/        # stage 1 only: raster -> vector SVGs into ./out
 sh generate_font.sh          # stage 2 only: ./out/*.svg -> font (assumes ./out is populated)
 
 sh prune.sh                  # clear ./out
 
 pnpm typecheck               # tsc --noEmit
+pnpm test                    # node:test through tsx: src/**/*.test.ts
+uv run python -m unittest discover tests    # font build tests (.missing glyph)
 ```
 
 The `.sh` files have no shebang and no execute bit — invoke them as `sh <script>`, not `./<script>`.
 
+`pnpm extract` flags (parsed in `src/extract.ts` via `arg`): `--mc-version <id>` (default `1.21.2`), `-o/--output` (default `./images`), `--cache` (default `./.cache`). `fflate` is a runtime dependency of it, for reading the zip.
+
 `pnpm pixilate` flags (parsed in `src/main.ts` via `arg`): `-o/--output` (default `./out`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args.
 
-TypeScript runs through **tsx** (`pnpm pixilate` → `tsx src/main.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and is the only check that exists — there is no test runner or linter. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
+TypeScript runs through **tsx** (`pnpm pixilate` → `tsx src/main.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage and the PNG codec. The font build has its own stdlib `unittest` suite in `tests/` (`tests/test_missing_glyph.py`), run with `uv run python -m unittest discover tests`. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
 
 **`canvas` is a native module and pnpm 10 blocks postinstall scripts by default.** `package.json` declares `pnpm.onlyBuiltDependencies: ["canvas", "esbuild"]` to permit it. If `pnpm install` ever prints `Ignored build scripts: canvas`, the binary is missing and *every* entry point dies with a confusing `ERR_INTERNAL_ASSERTION` from Node's CJS loader rather than a sensible "module not found" — pnpm won't re-run scripts for already-installed packages, so fix an existing tree with `pnpm rebuild canvas`. Since canvas 3 this installs a **prebuilt** binary (v2 used node-pre-gyp and compiled from source, needing Homebrew cairo/pango/pixman).
 
@@ -39,14 +45,29 @@ Do not reintroduce `ts-node` — its ESM loader is unmaintained and dies with `E
 
 ## Input contract
 
-Source PNGs live in `images/` (the README says `banners/` — it is stale; `generate_full.sh` uses `images/`). Each is **20×40 px**, named `xyy.png`:
+Source PNGs live in `images/`. They are **generated** by `pnpm extract` from the Mojang client jar (see stage 0) and are neither tracked nor distributed, because they are Mojang assets. Each is **20×40 px**, named `xyy.png`:
 
-- `x` — layer color, hex `0`–`f`. The real order is white, light gray, gray, black, yellow, orange, red, brown, lime, green, light blue, cyan, blue, pink, magenta, purple. `mappings.json → color_code` lists a different (wiki) order and is stale. The hex values in the Minecraft wiki "Pattern color" table (`#D87F33` for orange, and so on) are the game's `MapColor` values. They are **not** the banner tint. The tint is `DyeColor`'s texture-diffuse value (`#F9801D` for orange). The oracle PNGs equal `jar texture × DyeColor value` within 2/255, and the 16 `DyeColor` values are identical in every client jar from 1.12.2 to 26.3
+- `x` — layer color, hex `0`–`f`. The real order is white, light gray, gray, black, yellow, orange, red, brown, lime, green, light blue, cyan, blue, pink, magenta, purple. `mappings.json → color_code` lists a different (wiki) order and is stale. The hex values in the Minecraft wiki "Pattern color" table (`#D87F33` for orange, and so on) are the game's `MapColor` values. They are **not** the banner tint. The tint is `DyeColor`'s texture-diffuse value (`#F9801D` for orange). The oracle PNGs equal `jar texture × DyeColor value` within 2/255, and the 16 `DyeColor` values are identical in every client jar from 1.12.2 to 26.3. The **oracle** is the 688 PNGs that were once tracked in `images/`. They now live in `oracle/`, local only and untracked, together with `oracle/compare.ts`, which checks that an extracted `images/` matches them within 2/255 per channel. It is not a `pnpm` script
 - `yy` — pattern, decimal `00`–`42`, indexes `mappings.json → layer_code`
 
-688 files = 16 colours × 43 patterns.
+688 files = 16 colours × 43 patterns. An older jar can yield fewer, see the missing-texture warning in stage 0.
 
 ## Pipeline architecture
+
+**Stage 0 — `src/extract.ts`**, run as `pnpm extract [--mc-version <id>]`: builds `images/` from the official client jar, so no Mojang asset lives in the repo.
+
+1. Read `version_manifest_v2.json` from `piston-meta.mojang.com`. Release versions only. The floor is **1.12.2**, compared by the manifest's `releaseTime`: an older version stops with an error that names the floor. Older jars have no `DyeColor` tint constants.
+2. Fetch the version JSON, download `downloads.client` and verify its SHA-1, then cache it at `.cache/minecraft/<version>/client.jar`. A second run does not download again. A cached jar is used as is: it skips the manifest and the floor check. `.cache/` is gitignored.
+3. Read only the needed zip entries, in memory (`fflate`): `assets/minecraft/textures/entity/banner/<name>.png` for the 43 patterns in the pattern map at the top of the file (pattern `00` is `base.png`).
+4. Per pattern: crop the 20×40 front face (1,1)–(21,41) of the 64×64 texture, multiply each RGB channel by the layer color, copy alpha. The formula per channel is `floor(tex * dye / 255)`. The 16 tints are a **constant table in the source, in the oracle digit order**, identical for every version. Write `images/<x><yy>.png`, `x` being the hex digit.
+
+PNGs are read and written with `src/png.ts`, not `node-canvas`: canvas premultiplies alpha, which would distort the color of every low-alpha pixel. The pure functions (`multiplyLayer`, `cropFront`, `compareVersions`, `parseManifest`, `jarHasDyeValues`) are unit tested in `src/extract.test.ts`.
+
+**Dye notice.** After loading the jar, `jarHasDyeValues` searches its classes for the 16 tints as Java integer constants (tag `0x03` + big-endian int32). If they are not found it prints one notice line and continues, because the table is fixed and a new Minecraft version must never stop the build.
+
+**Missing-texture warning.** If the jar lacks a pattern texture, extract prints one warning per pattern and writes no PNG for it. Texture counts per version: 1.12.2 and 1.13.2 have 39, 1.14 has 40, 1.16.5 and 1.20.4 have 41, and 1.20.5 onwards have all 43 (`flow` and `guster` first appear in 1.20.5), so 1.12.2 misses 4 patterns, 1.14 misses 3 and 1.16.5 misses 2. The font build maps every banner codepoint without a glyph to the `.missing` glyph (see below).
+
+Timing: **~9 s** cold (download of the ~40 MB jar), **~0.9 s** with the jar cached. A full `sh generate_full.sh` with a cached jar and a clean `images/`, `out/` and `build/` takes ~2.4 s.
 
 **Stage 1 — `src/pixilate.ts` (`processImage`)**, the only nontrivial code in the repo:
 
@@ -76,7 +97,7 @@ Verified equivalent, not just plausible. Running both unions over the *same* pix
 
 This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `src/build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
 
-The replacement was verified against a nanoemoji-built reference on the same SVGs: identical `cmap` (818 entries, no differences), **zero advance mismatches**, identical COLR paint structure, palette values and alphas, and `hb-view` renders of all 688 banner glyphs agreeing to within 2/255 on ~0.04 % of pixels (antialiasing rounding).
+The replacement was verified against a nanoemoji-built reference on the same SVGs: identical `cmap` (818 entries then, no differences; the font now has 829, see the `.missing` section), **zero advance mismatches**, identical COLR paint structure, palette values and alphas, and `hb-view` renders of all 688 banner glyphs agreeing to within 2/255 on ~0.04 % of pixels (antialiasing rounding).
 
 ### The encoding is frozen
 
@@ -127,6 +148,14 @@ Two things this does **not** do, and cannot:
 - It removes *coverage*, which is not the same as forcing a visible tofu. A browser that cannot find a codepoint in this font falls back to the next font in the CSS stack, and draws `.notdef` only when nothing in the stack covers it.
 - Mapping a codepoint to glyph id 0 in `cmap` is not a way around that — HarfBuzz treats a nominal glyph of 0 as "not covered", identically to an absent entry. Actually drawing a box for arbitrary text would mean mapping it to a real box-shaped glyph, which is not `.notdef`.
 
+### The `.missing` glyph
+
+`src/build_font.py` maps every expected banner codepoint that has no SVG to a visible `.missing` glyph. The expected set is U+E000 + `x`·0x100 + (`yy`//10)·0x10 + `yy`%10 for `x` 0–15 and `yy` 0–42 (the two decimal digits of `yy` are read as hex digits, so pattern 42 is U+E042). With a full jar none is missing and the build prints `0 expected banner codepoints mapped to .missing`.
+
+`.missing` is a normal glyph, **not** gid 0: gid 0 stays `.notdef`, gid 1 stays the blank, `.missing` is gid 2. It advances 600 units (one banner), is a monochrome box outline in the banner cell, and has `lsb` equal to its `xMin` like every other glyph. This is the "real box-shaped glyph" the `.notdef` section says is needed, but only for banner codepoints. The ASCII behaviour does not change.
+
+The built font has **829** `cmap` entries: 688 banners, the 128 space glyphs, U+E00C, the 11 other control gaps and `ucfff7`. The font tests are in `tests/test_missing_glyph.py`.
+
 ### Per-pattern exceptions
 
 - Patterns `13` (`gra`, gradient) and `14` (`gru`, gradient up) quantize to `detailedColorNumber` (hardcoded `10` at the `processImage` call site) instead of the default 3 — 3 colours destroys a gradient.
@@ -136,7 +165,7 @@ Both exceptions key off `currentCode`, the `yy` slice of the filename — filena
 
 ## Repo hygiene
 
-`.gitignore` excludes `build/`, `*.svg`, and `images/**`, so build output and generated SVGs are not tracked. `images/` is partly tracked from before that rule was added — don't "fix" this by mass-adding or mass-removing. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
+`.gitignore` excludes `build/`, `*.svg`, `images/**`, `oracle/` and `.cache/`, so build output, generated SVGs, the extracted PNGs, the oracle and the cached jar are not tracked. No PNG is in the index any more: `images/` is regenerated by `pnpm extract`, and the old tracked set moved to `oracle/` (local only). The earlier "partly tracked" state is gone, so do not add anything under `images/` or `oracle/`. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
 
 The Deta Space hosting is gone: `public/`, `shell.sh`, and `setup.sh`'s Deta lines have all been removed. `setup.sh` now only bootstraps pnpm and fontTools, duplicating the README's prerequisites.
 
