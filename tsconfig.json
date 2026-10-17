@@ -3,16 +3,19 @@
         "target": "ES2022",
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
+        "lib": [
+            "dom",
+            "esnext"
+        ],
         "outDir": "dist",
         "strict": true,
         "skipLibCheck": true,
         "esModuleInterop": true,
-    },
-    "ts-node": {
-        "experimentalSpecifierResolution": "node",
-        "ignoreDiagnostics": [
-            1308
-        ]
+        "allowImportingTsExtensions": true,
+        "types": [
+            "node"
+        ],
+        "noEmit": true,
     },
     "include": [
         "./**/*.ts"
