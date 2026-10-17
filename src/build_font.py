@@ -59,6 +59,15 @@ SCALE = (ASCENDER - DESCENDER) / CANVAS_HEIGHT      # 30 font units per canvas u
 X_NUDGE = -20                                       # nanoemoji's --transform, in font units
 CLIP_PAD_Y = 10          # nanoemoji pads the clip box in y only, not x
 
+BANNER_WIDTH = 20        # canvas units; the base glyph's viewBox width
+MISSING = ".missing"
+MISSING_STROKE = 60      # border thickness of the .missing box, in font units
+# Layer color digit x (0-f) and pattern yy (00-42). The filename is `ue` + x + yy with yy
+# written as two *decimal* digits, which the codepoint reads as hex digits: pattern 42 is
+# U+E042, not U+E02A. That is why U+E00A-E00F and U+E01A-E01F are never banners.
+EXPECTED_BANNER_CODEPOINTS = [0xE000 + x * 0x100 + (yy // 10) * 0x10 + yy % 10
+                              for x in range(16) for yy in range(43)]
+
 SVG_NS = "{http://www.w3.org/2000/svg}"
 
 # Identity. Both macOS Font Book and the Windows font installer reject a font whose
@@ -95,6 +104,22 @@ TYPO_DECORATION = dict(
     ySuperscriptXSize=round(UPEM * 1331 / 2048), ySuperscriptYSize=round(UPEM * 1331 / 2048),
     ySuperscriptXOffset=0, ySuperscriptYOffset=round(UPEM * 983 / 2048),
 )
+
+
+def missing_glyph():
+    """A box outline filling the banner cell: the same x range and ascender..descender band
+    the banners paint into. TrueType fills with nonzero winding and wants outer contours
+    clockwise, so the inner rectangle runs counter-clockwise to cut the hole."""
+    x0, x1 = X_NUDGE - round(SCALE * BANNER_WIDTH), X_NUDGE     # -620 .. -20
+    y0, y1 = DESCENDER, ASCENDER
+    pen = TTGlyphPen(None)
+    pen.moveTo((x0, y0)); pen.lineTo((x0, y1)); pen.lineTo((x1, y1)); pen.lineTo((x1, y0))
+    pen.closePath()
+    i = MISSING_STROKE
+    pen.moveTo((x0 + i, y0 + i)); pen.lineTo((x1 - i, y0 + i))
+    pen.lineTo((x1 - i, y1 - i)); pen.lineTo((x0 + i, y1 - i))
+    pen.closePath()
+    return pen.glyph()
 
 
 def codepoint_of(stem: str) -> int:
@@ -146,6 +171,12 @@ def build(out_dir: Path) -> bytes:
     glyph_order = [".notdef", ".blank"]
     glyphs = {n: TTGlyphPen(None).glyph() for n in glyph_order}
     advances = {n: 0 for n in glyph_order}
+
+    # .missing: a visible box for banner codepoints with no SVG. It is a plain glyf glyph,
+    # not in COLR, and one banner wide so it steps the pen like a real base glyph.
+    glyph_order.append(MISSING)
+    glyphs[MISSING] = missing_glyph()
+    advances[MISSING] = round(SCALE * BANNER_WIDTH)
 
     # Accumulators for the whole font. Every table below is filled by the one loop.
     cmap: dict[int, str] = {}
@@ -218,6 +249,12 @@ def build(out_dir: Path) -> bytes:
             round(x0), round(y0) - CLIP_PAD_Y,
             round(x1), round(y1) + CLIP_PAD_Y,
         )
+
+    # Every banner codepoint no SVG produced shows the tofu box instead of nothing.
+    missing = sorted(cp for cp in EXPECTED_BANNER_CODEPOINTS if cp not in cmap)
+    for cp in missing:
+        cmap[cp] = MISSING
+    print(f"{len(missing)} expected banner codepoints mapped to {MISSING}")
 
     # Assemble the tables. glyf must exist before the metrics read xMin back.
     fb = FontBuilder(UPEM, isTTF=True)
