@@ -41,7 +41,7 @@ Do not reintroduce `ts-node` — its ESM loader is unmaintained and dies with `E
 
 Source PNGs live in `images/` (the README says `banners/` — it is stale; `generate_full.sh` uses `images/`). Each is **20×40 px**, named `xyy.png`:
 
-- `x` — banner colour, hex `0`–`f`, indexes `mappings.json → color_code`
+- `x` — layer color, hex `0`–`f`. The real order is white, light gray, gray, black, yellow, orange, red, brown, lime, green, light blue, cyan, blue, pink, magenta, purple. `mappings.json → color_code` lists a different (wiki) order and is stale. The hex values in the Minecraft wiki "Pattern color" table (`#D87F33` for orange, and so on) are the game's `MapColor` values. They are **not** the banner tint. The tint is `DyeColor`'s texture-diffuse value (`#F9801D` for orange). The oracle PNGs equal `jar texture × DyeColor value` within 2/255, and the 16 `DyeColor` values are identical in every client jar from 1.12.2 to 26.3
 - `yy` — pattern, decimal `00`–`42`, indexes `mappings.json → layer_code`
 
 688 files = 16 colours × 43 patterns.
@@ -77,6 +77,12 @@ Verified equivalent, not just plausible. Running both unions over the *same* pix
 This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `src/build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
 
 The replacement was verified against a nanoemoji-built reference on the same SVGs: identical `cmap` (818 entries, no differences), **zero advance mismatches**, identical COLR paint structure, palette values and alphas, and `hb-view` renders of all 688 banner glyphs agreeing to within 2/255 on ~0.04 % of pixels (antialiasing rounding).
+
+### The encoding is frozen
+
+**Do not change the encoding unless the user asks for it in so many words.** The encoding is the mapping from `xyy` to a codepoint (U+E000–U+EF42), the digit order of `x` (see Input contract), the pattern numbering of `yy`, the PUA allocation of the space block and the control gaps, and the glyph advance widths. Text that people already wrote depends on all of it, so a change silently recolours or scrambles existing text.
+
+A task that sounds like a cleanup ("make `x` follow the wiki data values", "fix `mappings.json`", "renumber the patterns") is an encoding change. Stop and ask first. Source changes (new texture source, new palette source, speed) must keep every codepoint rendering the same banner.
 
 ### Glyph naming and stacking — the two things that break easily
 
