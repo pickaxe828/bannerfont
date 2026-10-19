@@ -52,7 +52,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ubef-font"
+name = "bannerfont-web"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

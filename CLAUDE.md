@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-UBEF (Un-indexable Banner Encoding with Font) turns Minecraft banner textures into a **COLRv1 colour font**, so web apps outside Minecraft (originally a BetterDiscord theme, UBEF-BD) can render ClongCraft banner writing as ordinary text in the Unicode Private Use Area.
+bannerfont-web (formerly UBEF, Un-indexable Banner Encoding with Font) turns Minecraft banner textures into a **COLRv1 colour font**, so web apps outside Minecraft (originally the BetterDiscord theme UBEF-BD) can render ClongCraft banner writing as ordinary text in the Unicode Private Use Area.
 
 There is no runtime app here — the repo is a one-shot asset pipeline plus the built `.ttf`.
 
@@ -33,7 +33,7 @@ The `.sh` files have no shebang and no execute bit — invoke them as `sh <scrip
 
 `pnpm pixilate` flags (parsed in `src/main.ts` via `arg`): `-o/--output` (default `./out`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args.
 
-TypeScript runs through **tsx** (`pnpm pixilate` → `tsx src/main.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage and the PNG codec. The font build has its own stdlib `unittest` suite in `tests/` (`tests/test_missing_glyph.py`), run with `uv run python -m unittest discover tests`. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
+TypeScript runs through **tsx** (`pnpm pixilate` → `tsx src/main.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage and the PNG codec. The font build has its own stdlib `unittest` suite in `tests/` (`tests/test_missing_glyph.py`, `tests/test_vendor.py` for `achVendID` and the vendor URL), run with `uv run python -m unittest discover tests`. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
 
 **`canvas` is a native module and pnpm 10 blocks postinstall scripts by default.** `package.json` declares `pnpm.onlyBuiltDependencies: ["canvas", "esbuild"]` to permit it. If `pnpm install` ever prints `Ignored build scripts: canvas`, the binary is missing and *every* entry point dies with a confusing `ERR_INTERNAL_ASSERTION` from Node's CJS loader rather than a sensible "module not found" — pnpm won't re-run scripts for already-installed packages, so fix an existing tree with `pnpm rebuild canvas`. Since canvas 3 this installs a **prebuilt** binary (v2 used node-pre-gyp and compiled from source, needing Homebrew cairo/pango/pixman).
 
