@@ -8,10 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_missing_glyph import BASE_SVG, build_with  # noqa: E402
 
-REPO_URL = "https://github.com/pickaxe828/bannerfont-web"
+REPO_URL = "https://github.com/pickaxe828/bannerfont"
 NAME_ID_UNIQUE_ID = 3
 NAME_ID_VENDOR_URL = 11
-VENDOR_ID = "BNFW"
+VENDOR_ID = "BNFT"
 
 
 def _name(font, name_id):
@@ -23,7 +23,7 @@ class VendorIdentityTest(unittest.TestCase):
     def setUpClass(cls):
         cls.font = build_with({"ue000": BASE_SVG})
 
-    def test_vendor_id_is_bnfw(self):
+    def test_vendor_id_is_bnft(self):
         self.assertEqual(self.font["OS/2"].achVendID, VENDOR_ID)
 
     def test_vendor_url_is_the_repo_url(self):

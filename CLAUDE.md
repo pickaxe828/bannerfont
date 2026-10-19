@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-bannerfont-web (see the README's Previous name section for the earlier name) turns Minecraft banner textures into a **COLRv1 colour font**, so web apps outside Minecraft (originally a BetterDiscord theme) can render ClongCraft banner writing as ordinary text in the Unicode Private Use Area.
+bannerfont (see the README's Previous name section for the earlier name) turns Minecraft banner textures into a **COLRv1 colour font**, so web apps outside Minecraft (originally a BetterDiscord theme) can render ClongCraft banner writing as ordinary text in the Unicode Private Use Area.
 
 There is no runtime app here — the repo is a one-shot asset pipeline plus the built `.ttf`.
 

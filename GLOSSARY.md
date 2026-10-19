@@ -1,6 +1,6 @@
-# bannerfont-web
+# bannerfont
 
-bannerfont-web turns Minecraft banner textures into a COLRv1 color font. A banner is written as ordinary text in the Unicode Private Use Area.
+bannerfont turns Minecraft banner textures into a COLRv1 color font. A banner is written as ordinary text in the Unicode Private Use Area.
 
 ## Language
 

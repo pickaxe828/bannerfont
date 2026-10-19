@@ -52,7 +52,7 @@ wheels = [
 ]
 
 [[package]]
-name = "bannerfont-web"
+name = "bannerfont"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

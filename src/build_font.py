@@ -79,9 +79,9 @@ STYLE = "Regular"
 FULL_NAME = f"{FAMILY} {STYLE}"
 PS_NAME = f"{FAMILY}-{STYLE}"
 VERSION = 1.0
-VENDOR_ID = "BNFW"                                  # OS/2 achVendID, exactly 4 chars
+VENDOR_ID = "BNFT"                                  # OS/2 achVendID, exactly 4 chars
 COPYRIGHT = "Copyright (c) 2023 Pickaxe828. MIT License."
-VENDOR_URL = "https://github.com/pickaxe828/bannerfont-web"
+VENDOR_URL = "https://github.com/pickaxe828/bannerfont"
 
 FS_SELECTION_REGULAR = 1 << 6                       # OS/2 fsSelection bit 6
 # Windows GDI reads ulCodePageRange to decide which code pages a font serves. All-zero
