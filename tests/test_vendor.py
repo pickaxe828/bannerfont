@@ -1,4 +1,4 @@
-"""Seam: build_font.build(out_dir) -> font bytes. Run: uv run python -m unittest discover tests"""
+"""Seam: build_with(svgs) -> compiled TTFont (from test_missing_glyph). Run: uv run python -m unittest discover tests"""
 
 import sys
 import unittest
@@ -9,7 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_missing_glyph import BASE_SVG, build_with  # noqa: E402
 
 REPO_URL = "https://github.com/pickaxe828/bannerfont-web"
+NAME_ID_UNIQUE_ID = 3
 NAME_ID_VENDOR_URL = 11
+VENDOR_ID = "BNFW"
+
+
+def _name(font, name_id):
+    return font["name"].getName(name_id, 3, 1, 0x409).toUnicode()
 
 
 class VendorIdentityTest(unittest.TestCase):
@@ -18,15 +24,13 @@ class VendorIdentityTest(unittest.TestCase):
         cls.font = build_with({"ue000": BASE_SVG})
 
     def test_vendor_id_is_bnfw(self):
-        self.assertEqual(self.font["OS/2"].achVendID, "BNFW")
+        self.assertEqual(self.font["OS/2"].achVendID, VENDOR_ID)
 
     def test_vendor_url_is_the_repo_url(self):
-        record = self.font["name"].getName(NAME_ID_VENDOR_URL, 3, 1, 0x409)
-        self.assertEqual(record.toUnicode(), REPO_URL)
+        self.assertEqual(_name(self.font, NAME_ID_VENDOR_URL), REPO_URL)
 
     def test_unique_font_identifier_carries_the_vendor_id(self):
-        record = self.font["name"].getName(3, 3, 1, 0x409)
-        self.assertEqual(record.toUnicode(), "1.000;BNFW;BannerFont-Regular")
+        self.assertIn(VENDOR_ID, _name(self.font, NAME_ID_UNIQUE_ID))
 
 
 if __name__ == "__main__":

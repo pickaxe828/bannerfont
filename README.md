@@ -1,7 +1,7 @@
 # bannerfont-web
 Welcome to bannerfont-web <br>
 This repo is a simple tool convert Minecraft banners into a special font to be used in web applications. <br>
-Historically, this was used with UBEF-BD to make a BetterDiscord theme/ plugin that renders banners encodings (in the PUA range), which is to assist communication in the ClongCraft project.
+Historically, this was used with a BetterDiscord theme/ plugin that renders banners encodings (in the PUA range), which is to assist communication in the ClongCraft project.
 
 ## Previous name: UBEF
 This project was called **UBEF**, which stands for **Un-indexable Banner Encoding with Font**. The name comes from a failed attempt to make the banner text indexable and searchable on Discord: the banners are Private Use Area characters, so they stay un-indexable. Some files and notes still use the old name, for example `UBEF-BD` for the BetterDiscord theme and the old repository URL `UBEF-Font`, which GitHub redirects to `bannerfont-web`.
