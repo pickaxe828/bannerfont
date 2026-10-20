@@ -1,6 +1,6 @@
 # bannerfont
 
-bannerfont turns Minecraft banner textures into a COLRv1 color font. A banner is written as ordinary text in the Unicode Private Use Area.
+bannerfont turns Minecraft banner textures into a color font (COLRv1, with COLRv0, OpenType-SVG and sbix fallbacks). A banner is written as ordinary text in the Unicode Private Use Area.
 
 ## Language
 
@@ -25,3 +25,9 @@ _Avoid_: Fixtures, golden files
 
 **Space**:
 An empty glyph that moves the pen by a whole number of banners.
+
+**Ramp pattern**:
+Pattern `13` or `14`: a gray texture under a vertical alpha ramp. It is drawn as a linear gradient, not as quantized colors.
+
+**Flat twin**:
+The quantized, gradient-free copy of a ramp glyph (`<glyph>.flat.svg`). COLRv0 uses it because COLRv0 has no gradients.
