@@ -44,20 +44,44 @@ export interface TestFontOptions {
   run?: Runner
 }
 
+/** One line of `tests/font/run.py`'s JSON-lines output. */
+export interface FontTestResult {
+  id: string
+  status: "pass" | "fail" | "error" | "skip"
+  message: string
+  seconds: number
+}
+
 export interface TestFontResult {
   ok: boolean
+  results: FontTestResult[]
+  /** The runner's whole output, for when `results` does not explain a failure (a crash before any test ran). */
   output: string
 }
 
+/** The JSON lines of the runner's output; its human summary and any warnings are not JSON and are skipped. */
+function parseResults(output: string): FontTestResult[] {
+  const results: FontTestResult[] = []
+  for (const line of output.split("\n")) {
+    if (!line.startsWith("{")) continue
+    try {
+      results.push(JSON.parse(line) as FontTestResult)
+    } catch {
+      // not a result line
+    }
+  }
+  return results
+}
+
 /**
- * Runs only the font tests (the Python suite in tests/) against the built font. Throws when
- * build/Font.ttf is missing; failing tests are a result, not an exception.
+ * Runs only the real-font suite (tests/font/run.py, which prints one JSON object per test) against
+ * the built font. Throws when build/Font.ttf is missing; failing tests are a result, not an exception.
  */
 export async function testFont(options: TestFontOptions = {}): Promise<TestFontResult> {
   const { run: runner = run } = options
   if (!fs.existsSync(FONT_PATH)) {
     throw new Error(`${FONT_PATH} is missing; run \`bannerfont build\` or \`bannerfont font\` first`)
   }
-  const { code, output } = await runner("uv", ["run", "python", "-m", "unittest", "discover", "tests"])
-  return { ok: code === 0, output }
+  const { code, output } = await runner("uv", ["run", "python", "tests/font/run.py"])
+  return { ok: code === 0, results: parseResults(output), output }
 }

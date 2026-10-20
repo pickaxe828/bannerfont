@@ -107,13 +107,21 @@ async function fontStage() {
   log.success(`Wrote ${FONT_PATH}`)
 }
 
-/** Runs the font tests. Throws when they fail or when the font is missing. */
+/** Runs the font tests and shows one line per result. Throws when they fail or when the font is missing. */
 async function testStage() {
   log.step("Running the font tests")
-  const { ok, output } = await testFont()
-  if (!ok) throw new Error(`Font tests failed\n${output.trim()}`)
-  log.message(output.trim())
-  log.success("Font tests passed")
+  const { ok, results, output } = await testFont()
+  const shortName = (id: string) => id.replace(/^tests\.font\./, "")
+  for (const { id, status, message, seconds } of results) {
+    const line = `${shortName(id)} (${seconds.toFixed(2)}s)`
+    if (status === "pass") log.success(line)
+    else if (status === "skip") log.warn(`${line}: skipped${message ? `: ${message}` : ""}`)
+    else log.error(`${line}: ${status}${message ? `\n${message.trim()}` : ""}`)
+  }
+  const failed = results.filter((r) => r.status === "fail" || r.status === "error").length
+  // No results at all means the runner died before any test ran: show what it printed
+  if (!ok) throw new Error(results.length === 0 ? `Font tests failed\n${output.trim()}` : `${failed} font test(s) failed`)
+  log.success(`Font tests passed (${results.length} run, ${results.filter((r) => r.status === "skip").length} skipped)`)
 }
 
 const extractCommand = stage({

@@ -54,25 +54,49 @@ describe("testFont", () => {
     fs.writeFileSync(FONT_PATH, "")
   }
 
-  it("runs only the font tests", async () => {
-    const { run, calls } = fakeRunner(0, "OK")
+  const line = (id: string, status: string, message = "") =>
+    JSON.stringify({ id, status, message, seconds: 0.01 })
+
+  it("runs the real-font suite through its JSON-lines runner", async () => {
+    const { run, calls } = fakeRunner(0)
     writeFont()
 
-    const result = await testFont({ run })
+    await testFont({ run })
 
-    assert.deepEqual(result, { ok: true, output: "OK" })
-    assert.equal(calls.length, 1)
-    assert.deepEqual(calls[0].args, ["run", "python", "-m", "unittest", "discover", "tests"])
-    assert.equal(calls[0].cmd, "uv")
+    assert.deepEqual(calls, [{ cmd: "uv", args: ["run", "python", "tests/font/run.py"], show: undefined }])
   })
 
-  it("reports failing tests with their output instead of throwing", async () => {
-    const { run } = fakeRunner(1, "FAILED (failures=1)")
+  it("returns one result per JSON line and skips the lines that are not JSON", async () => {
+    const output = [
+      line("tests.font.test_metrics.A.test_one", "pass"),
+      "tests/font: 2 pass",
+      line("tests.font.test_render.B.test_two", "skip", "no hb-view"),
+    ].join("\n")
+    const { run } = fakeRunner(0, output)
     writeFont()
 
     const result = await testFont({ run })
 
-    assert.deepEqual(result, { ok: false, output: "FAILED (failures=1)" })
+    assert.equal(result.ok, true)
+    assert.deepEqual(
+      result.results.map(({ id, status, message }) => ({ id, status, message })),
+      [
+        { id: "tests.font.test_metrics.A.test_one", status: "pass", message: "" },
+        { id: "tests.font.test_render.B.test_two", status: "skip", message: "no hb-view" },
+      ],
+    )
+  })
+
+  it("reports failing tests with their results instead of throwing", async () => {
+    const output = line("tests.font.test_colr.C.test_bad", "fail", "AssertionError: boom")
+    const { run } = fakeRunner(1, output)
+    writeFont()
+
+    const result = await testFont({ run })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.results[0].status, "fail")
+    assert.equal(result.results[0].message, "AssertionError: boom")
   })
 
   it("fails without running anything when build/Font.ttf is missing", async () => {
