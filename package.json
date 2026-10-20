@@ -4,13 +4,14 @@
   "description": "",
   "exports": "./index.js",
   "type": "module",
+  "bin": {
+    "bannerfont": "./bin/bannerfont.mjs"
+  },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "execute": "tsx",
-    "pixilate": "tsx src/main.ts",
-    "extract": "tsx src/extract.ts",
+    "bannerfont": "tsx src/cli.ts",
     "typecheck": "tsc",
     "test": "tsx --test \"src/**/*.test.ts\" && uv run python -m unittest discover -s tests/code -t .",
     "test:font": "uv run python tests/font/run.py"
@@ -19,16 +20,17 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "arg": "^5.0.2",
+    "@clack/prompts": "^1.8.1",
     "canvas": "^3.2.3",
+    "citty": "^0.2.2",
     "fflate": "^0.8.3",
     "jsdom": "^16.7.0",
     "paper": "^0.12.17",
-    "quanti": "^1.0.8"
+    "quanti": "^1.0.8",
+    "tsx": "^4.23.9"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "tsx": "^4.23.9",
     "typescript": "^7.0.2"
   },
   "pnpm": {

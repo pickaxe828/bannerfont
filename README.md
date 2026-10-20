@@ -10,20 +10,28 @@ This repo is a simple tool convert Minecraft banners into a special font to be u
 
 ## How to use
 0. Install dependencies
+  - `npm i -g pnpm` if you do not have pnpm
   - Run `pnpm install` in terminal
   - Run `uv sync` in terminal
-1. Run `sh generate_full.sh` to generate the font
+1. Run `pnpm bannerfont build` to generate the font
   - Built files are in `./build`, as `Font.ttf`
-  - Extra: You can clear the intermediate SVGs in `./out` by running `sh prune.sh`
+  - It finishes by running the font tests; the font stays in `./build` even if they fail, but the command exits non-zero
 
-`generate_full.sh` runs three stages in order. Arguments are passed on to the first one, so `sh generate_full.sh --mc-version 1.20.4` builds from another version.
+Run the commands from the repository root. `pnpm bannerfont` with no command opens a menu in a terminal, and prints the usage otherwise.
 
-1. `pnpm extract` downloads the official Minecraft client jar and builds the banner PNGs into `./images`
-2. `pnpm pixilate images/` traces the PNGs into SVGs in `./out`
-3. `sh generate_font.sh` compiles the SVGs into `./build/Font.ttf`
+| Command | What it does |
+| --- | --- |
+| `pnpm bannerfont build` | `extract`, `pixilate`, `font`, then `test`. Takes `--mc-version`, `--cache` and `-c/--colors`, so `pnpm bannerfont build --mc-version 1.20.4` builds from another version |
+| `pnpm bannerfont extract` | downloads the official Minecraft client jar and builds the banner PNGs into `./images` |
+| `pnpm bannerfont pixilate images/` | traces the PNGs (any mix of files and folders) into SVGs in `./out`. Takes `-o/--output` and `-c/--colors` |
+| `pnpm bannerfont font` | compiles the SVGs into `./build/Font.ttf` |
+| `pnpm bannerfont test` | runs the font tests against `./build/Font.ttf`, and fails if it does not exist |
+| `pnpm bannerfont prune` | clears the intermediate SVGs in `./out` |
+
+A flag always wins. When a value is missing, a terminal asks for it (the Minecraft version, the paths to trace) and anything else uses the default.
 
 ## Where the banner images come from
-The repository contains no Mojang assets. `pnpm extract` reads the banner textures from the client jar that Mojang publishes, tints each of the 43 patterns with each of the 16 layer colors, and writes the 688 PNGs (20×40 px, named `xyy.png`, from `000.png` to `f42.png`) to `./images`. The font is built locally from them, and `images/` is not tracked by git.
+The repository contains no Mojang assets. `pnpm bannerfont extract` reads the banner textures from the client jar that Mojang publishes, tints each of the 43 patterns with each of the 16 layer colors, and writes the 688 PNGs (20×40 px, named `xyy.png`, from `000.png` to `f42.png`) to `./images`. The font is built locally from them, and `images/` is not tracked by git.
 
 - `--mc-version <id>` selects the Minecraft version. The default is `1.21.2`. Only release versions work, and the oldest one is `1.12.2`: older jars do not carry the layer colors, so they are refused with an error
 - The jar is cached at `.cache/minecraft/<version>/client.jar`, so only the first run downloads. The download is checked against the SHA-1 that Mojang publishes
@@ -32,4 +40,4 @@ The repository contains no Mojang assets. `pnpm extract` reads the banner textur
 
 The layer color digit `x` (`0`-`f`) and the pattern number `yy` (`00`-`42`) follow a fixed encoding that is documented in `CLAUDE.md`. The layer color order is not the Minecraft wiki order.
 
-Run `pnpm test` for the unit tests (extract stage, PNG codec and the font build on synthetic input). After a build, `pnpm test:font` checks the real `build/Font.ttf`.
+Run `pnpm test` for the unit tests (extract stage, PNG codec, CLI wiring and the font build on synthetic input). The real-font tests are `pnpm bannerfont test`, which checks `build/Font.ttf` and is also the last step of `pnpm bannerfont build`.
