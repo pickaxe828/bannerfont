@@ -12,28 +12,32 @@ There is no runtime app here — the repo is a one-shot asset pipeline plus the 
 
 ```sh
 pnpm install                                    # Node deps
-python -m pip install --upgrade fonttools       # font compiler (required, not in package.json)
+uv sync                                         # Python deps (fontTools); `uv run` also does this on demand
 
-sh generate_full.sh          # full build: jar -> PNGs -> SVGs -> build/Font.ttf
-sh generate_full.sh --mc-version 1.20.4   # arguments are forwarded to pnpm extract
-pnpm extract                 # stage 0 only: Mojang client jar -> 688 PNGs in ./images
-pnpm pixilate images/        # stage 1 only: raster -> vector SVGs into ./out
-sh generate_font.sh          # stage 2 only: ./out/*.svg -> font (assumes ./out is populated)
-
-sh prune.sh                  # clear ./out
+pnpm bannerfont build        # full build: jar -> PNGs -> SVGs -> build/Font.ttf, then the font tests
+pnpm bannerfont build --mc-version 1.20.4   # flags of build: --mc-version, --cache, -c/--colors
+pnpm bannerfont extract      # stage 0 only: Mojang client jar -> 688 PNGs in ./images
+pnpm bannerfont pixilate images/   # stage 1 only: raster -> vector SVGs into ./out
+pnpm bannerfont font         # stage 2 only: ./out/*.svg -> build/Font.ttf (assumes ./out is populated)
+pnpm bannerfont test         # font tests only (needs build/Font.ttf)
+pnpm bannerfont prune        # clear ./out
+pnpm bannerfont              # no command: a select on a TTY, usage and exit 1 otherwise
 
 pnpm typecheck               # tsc --noEmit
 pnpm test                    # node:test through tsx: src/**/*.test.ts
 uv run python -m unittest discover tests    # font build tests (.missing glyph)
 ```
 
-The `.sh` files have no shebang and no execute bit — invoke them as `sh <script>`, not `./<script>`.
+`bannerfont` is also the `bin` of the package (`bin/bannerfont.mjs`, which registers tsx and loads `src/cli.ts`). All paths are relative to the current directory, so run it from the repo root.
 
-`pnpm extract` flags (parsed in `src/extract.ts` via `arg`): `--mc-version <id>` (default `1.21.2`), `-o/--output` (default `./images`), `--cache` (default `./.cache`). `fflate` is a runtime dependency of it, for reading the zip.
+**The CLI** is `src/cli.ts`: citty parses arguments, `@clack/prompts` draws the UI. The stages are plain functions that the CLI calls and that never run on import: `runExtract` in `src/extract.ts`, `pixilatePaths` in `src/pixilate.ts`, `buildFont`/`testFont` in `src/font.ts`, `prune` in `src/prune.ts`. The flag/prompt/default rule is `resolveValue` in `src/options.ts`: **a flag always wins and never prompts; without a flag a TTY gets a prompt and anything else gets the default.** Only `--mc-version` (extract, build) and the pixilate paths are prompted for.
 
-`pnpm pixilate` flags (parsed in `src/main.ts` via `arg`): `-o/--output` (default `./out`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args.
+- `extract` flags: `--mc-version <id>` (default `1.21.2`), `-o/--output` (default `./images`), `--cache` (default `./.cache`). `fflate` is a runtime dependency of it, for reading the zip.
+- `pixilate` flags: `-o/--output` (default `./out`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args; with none, the default is `./images`. In a directory only `*.png` files are converted.
+- `font` runs `uv run python src/build_font.py out build/Font.ttf`. Its output, stderr included, is shown, and a non-zero exit fails the command.
+- `test` runs only the font tests (`uv run python -m unittest discover tests`) and fails if `build/Font.ttf` is missing. `build` keeps `build/Font.ttf` and exits non-zero if those tests fail. Code tests stay on `pnpm test`.
 
-TypeScript runs through **tsx** (`pnpm pixilate` → `tsx src/main.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage and the PNG codec. The font build has its own stdlib `unittest` suite in `tests/` (`tests/test_missing_glyph.py`; `tests/test_vendor.py` for the vendor ID `achVendID`, the vendor URL and the unique font identifier), run with `uv run python -m unittest discover tests`. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
+TypeScript runs through **tsx** (`pnpm bannerfont` → `tsx src/cli.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage, the PNG codec, the option resolution, the pixilate stage, the font stage wiring (with an injected runner) and `prune`. The font build has its own stdlib `unittest` suite in `tests/` (`tests/test_missing_glyph.py`; `tests/test_vendor.py` for the vendor ID `achVendID`, the vendor URL and the unique font identifier), run with `bannerfont test` or `uv run python -m unittest discover tests`. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
 
 **`canvas` is a native module and pnpm 10 blocks postinstall scripts by default.** `package.json` declares `pnpm.onlyBuiltDependencies: ["canvas", "esbuild"]` to permit it. If `pnpm install` ever prints `Ignored build scripts: canvas`, the binary is missing and *every* entry point dies with a confusing `ERR_INTERNAL_ASSERTION` from Node's CJS loader rather than a sensible "module not found" — pnpm won't re-run scripts for already-installed packages, so fix an existing tree with `pnpm rebuild canvas`. Since canvas 3 this installs a **prebuilt** binary (v2 used node-pre-gyp and compiled from source, needing Homebrew cairo/pango/pixman).
 
@@ -45,7 +49,7 @@ Do not reintroduce `ts-node` — its ESM loader is unmaintained and dies with `E
 
 ## Input contract
 
-Source PNGs live in `images/`. They are **generated** by `pnpm extract` from the Mojang client jar (see stage 0) and are neither tracked nor distributed, because they are Mojang assets. Each is **20×40 px**, named `xyy.png`:
+Source PNGs live in `images/`. They are **generated** by `bannerfont extract` from the Mojang client jar (see stage 0) and are neither tracked nor distributed, because they are Mojang assets. Each is **20×40 px**, named `xyy.png`:
 
 - `x` — layer color, hex `0`–`f`. The real order is white, light gray, gray, black, yellow, orange, red, brown, lime, green, light blue, cyan, blue, pink, magenta, purple. `mappings.json → color_code` lists a different (wiki) order and is stale.
   - The hex values in the Minecraft wiki "Pattern color" table (`#D87F33` for orange, and so on) are the game's `MapColor` values. They are **not** the banner tint.
@@ -58,7 +62,7 @@ Source PNGs live in `images/`. They are **generated** by `pnpm extract` from the
 
 ## Pipeline architecture
 
-**Stage 0 — `src/extract.ts`**, run as `pnpm extract [--mc-version <id>]`: builds `images/` from the official client jar, so no Mojang asset lives in the repo.
+**Stage 0 — `src/extract.ts`**, run as `pnpm bannerfont extract [--mc-version <id>]`: builds `images/` from the official client jar, so no Mojang asset lives in the repo.
 
 1. Read `version_manifest_v2.json` from `piston-meta.mojang.com`. Release versions only. The floor is **1.12.2**, compared by the manifest's `releaseTime`: an older version stops with an error that names the floor. Older jars have no `DyeColor` tint constants.
 2. Fetch the version JSON, download `downloads.client` and verify its SHA-1, then cache it at `.cache/minecraft/<version>/client.jar`. A second run does not download again. A cached jar is used as is: it skips the manifest and the floor check. `.cache/` is gitignored.
@@ -71,7 +75,7 @@ PNGs are read and written with `src/png.ts`, not `node-canvas`: canvas premultip
 
 **Missing-texture warning.** If the jar lacks a pattern texture, extract prints one warning per pattern and writes no PNG for it. Texture counts per version: 1.12.2 and 1.13.2 have 39, 1.14 has 40, 1.16.5 and 1.20.4 have 41, and 1.20.5 onwards have all 43 (`flow` and `guster` first appear in 1.20.5), so 1.12.2 misses 4 patterns, 1.14 misses 3 and 1.16.5 misses 2. The font build maps every banner codepoint without a glyph to the `.missing` glyph (see below).
 
-Timing: **~9 s** cold (download of the ~40 MB jar), **~0.9 s** with the jar cached. A full `sh generate_full.sh` with a cached jar and a clean `images/`, `out/` and `build/` takes ~2.4 s.
+Timing: **~9 s** cold (download of the ~40 MB jar), **~0.9 s** with the jar cached. A full `pnpm bannerfont build` with a cached jar and a clean `images/`, `out/` and `build/` takes ~2.4 s.
 
 **Stage 1 — `src/pixilate.ts` (`processImage`)**, the only nontrivial code in the repo:
 
@@ -81,7 +85,7 @@ Timing: **~9 s** cold (download of the ~40 MB jar), **~0.9 s** with the jar cach
 4. **Contour-trace** each colour's pixels into one path (`traceOutline`). This is the polygon-count reduction — quantizing first is what keeps the output small.
 5. Emit the SVG string by hand → `./out/<glyphname>.svg`.
 
-`src/main.ts` fans this out over the directory with `Promise.allSettled`, then writes the geometry-free glyphs via `exportEmptySVGs`: `ucfff7.svg`, the 128 space glyphs of U+F000–U+F07F, and `ue00c.svg` (see below). Those are written one at a time, not concurrently — `paper.setup()` replaces the single global `paper.project`, so parallel exports would race.
+`pixilatePaths` in `src/pixilate.ts` converts every PNG, collecting each failure (path and message) instead of swallowing it - the CLI lists the failed files and exits non-zero, and `build` stops before the font stage - then, for a directory argument, writes the geometry-free glyphs via `exportEmptySVGs`: `ucfff7.svg`, the 128 space glyphs of U+F000–U+F07F, and `ue00c.svg` (see below). Those are written one at a time, not concurrently — `paper.setup()` replaces the single global `paper.project`, so parallel exports would race.
 
 ### Why stage 1 does not use a boolean union
 
@@ -97,7 +101,7 @@ Verified equivalent, not just plausible. Running both unions over the *same* pix
 
 **Pixel reading changed with it.** The old code went through `paper.Raster.getImageData`, which draws into a scratch canvas and reads back, so every pixel with alpha < 255 took an extra premultiply/un-premultiply round trip and lost 1–2 levels per channel. Reading `ctx.getImageData` once fixes that. It is a **visible change**: 642 of 688 banners shift, worst channel delta **7/255**, 2.9% of subpixels. The new colours are the correct ones — the old output landed outside the range of colours actually present in the source PNG.
 
-**Stage 2 — `src/build_font.py`**, invoked by `generate_font.sh`: compiles `./out/*.svg` into `build/Font.ttf` in **one process** with fontTools. `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
+**Stage 2 — `src/build_font.py`**, invoked by `bannerfont font`: compiles `./out/*.svg` into `build/Font.ttf` in **one process** with fontTools. `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
 
 This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `src/build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
 
@@ -135,7 +139,7 @@ Per the ClongCraft PUA allocation, `U+F040 + x` is a space of `x` banners, so th
 
 ### The control gaps (U+E00A–U+E00F, U+E01A–U+E01F)
 
-A banner glyph is `ue` + colour hex + pattern **decimal**, so no banner ever lands on a codepoint whose last two digits are `0a`–`0f` or `1a`–`1f`. `exportControlSVGs` in `src/main.ts` fills those two ranges with zero-width empty glyphs, so each control codepoint maps to a real glyph instead of tofu. U+E00C is skipped there — `exportSpaceSVGs` already gives it one banner of advance.
+A banner glyph is `ue` + colour hex + pattern **decimal**, so no banner ever lands on a codepoint whose last two digits are `0a`–`0f` or `1a`–`1f`. `exportControlSVGs` in `src/pixilate.ts` fills those two ranges with zero-width empty glyphs, so each control codepoint maps to a real glyph instead of tofu. U+E00C is skipped there — `exportSpaceSVGs` already gives it one banner of advance.
 
 Only colour `0`'s gaps are covered. The same gaps exist for every other colour (U+E10A–E10F, U+E11A–E11F, and so on) and are still unmapped.
 
@@ -169,9 +173,9 @@ Both exceptions key off `currentCode`, the `yy` slice of the filename — filena
 
 ## Repo hygiene
 
-`.gitignore` excludes `build/`, `*.svg`, `images/**`, `oracle/` and `.cache/`, so build output, generated SVGs, the extracted PNGs, the oracle and the cached jar are not tracked. No PNG is in the index any more: `images/` is regenerated by `pnpm extract`, and the old tracked set moved to `oracle/` (local only). The earlier "partly tracked" state is gone, so do not add anything under `images/` or `oracle/`. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
+`.gitignore` excludes `build/`, `*.svg`, `images/**`, `oracle/` and `.cache/`, so build output, generated SVGs, the extracted PNGs, the oracle and the cached jar are not tracked. No PNG is in the index any more: `images/` is regenerated by `bannerfont extract`, and the old tracked set moved to `oracle/` (local only). The earlier "partly tracked" state is gone, so do not add anything under `images/` or `oracle/`. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
 
-The Deta Space hosting is gone: `public/`, `shell.sh`, and `setup.sh`'s Deta lines have all been removed. `setup.sh` now only bootstraps pnpm and fontTools, duplicating the README's prerequisites.
+The Deta Space hosting is gone: `public/`, `shell.sh` and `setup.sh` have all been removed. So have the other `.sh` scripts (`generate_full.sh`, `generate_font.sh`, `prune.sh`): the `bannerfont` CLI replaced them, and the setup steps live in the README.
 
 `BannerFont.theme.css` is gone. It was a BetterDiscord theme whose `src:` pointed at the dead `ibef-1-i3169062.deta.app` URL, with a comment referencing the deleted `public/BannerFont.ttf` — so it loaded nothing. Reviving it needs a hosting decision first, then a fresh `@font-face` block, not a repair of the old file.
 
