@@ -5,17 +5,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from test_missing_glyph import BASE_SVG, build_with  # noqa: E402
-
-REPO_URL = "https://github.com/pickaxe828/bannerfont"
-NAME_ID_UNIQUE_ID = 3
-NAME_ID_VENDOR_URL = 11
-VENDOR_ID = "BNFT"
-
-
-def _name(font, name_id):
-    return font["name"].getName(name_id, 3, 1, 0x409).toUnicode()
+from vendor_identity import (  # noqa: E402
+    NAME_ID_UNIQUE_ID, NAME_ID_VENDOR_URL, REPO_URL, VENDOR_ID, name_record as _name)
 
 
 class VendorIdentityTest(unittest.TestCase):
