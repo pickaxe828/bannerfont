@@ -36,6 +36,7 @@ handed -- none of them derives anything. The build therefore has to fill in:
 See the setupNameTable and setupOS2 calls in build() for the specific values.
 """
 
+import argparse
 import io
 import re
 import sys
@@ -50,6 +51,11 @@ from fontTools.pens.recordingPen import RecordingPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.svgLib.path import parse_path
+
+try:
+    from . import color_formats, web_fonts    # imported as `src.build_font` (the tests)
+except ImportError:
+    import color_formats, web_fonts           # run as `python src/build_font.py`
 
 UPEM = 1024
 ASCENDER = 950
@@ -70,6 +76,11 @@ EXPECTED_BANNER_CODEPOINTS = [0xE000 + x * 0x100 + (yy // 10) * 0x10 + yy % 10
                               for x in range(16) for yy in range(PATTERN_COUNT)]
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
+
+# The colour formats the font can carry. Each renderer picks the richest one it knows, so
+# the default is all of them; see color_formats.py for who reads which. `sbix` also needs
+# the source PNGs (the images_dir argument of build()) and is skipped without them.
+FORMATS = ("colrv1", "colrv0", "svg", "sbix")
 
 # Identity. Both macOS Font Book and the Windows font installer reject a font whose
 # nameIDs 1-6 are not all present, so none of these is cosmetic. VERSION must agree
@@ -130,16 +141,40 @@ def codepoint_of(stem: str) -> int:
     return int(stem[1:], 16)
 
 
+def read_gradients(root):
+    """`<linearGradient>` defs of a stage 1 SVG, by id.
+
+    Stage 1 writes only userSpaceOnUse gradients with stop-color/stop-opacity stops; anything
+    else is rejected rather than guessed at."""
+    gradients = {}
+    for node in root.iter(f"{SVG_NS}linearGradient"):
+        if node.get("gradientUnits") != "userSpaceOnUse":
+            raise ValueError(f"gradient {node.get('id')!r} is not userSpaceOnUse")
+        stops = [(float(stop.get("offset")), stop.get("stop-color"),
+                  float(stop.get("stop-opacity", 1.0)))
+                 for stop in node.iter(f"{SVG_NS}stop")]
+        gradients[node.get("id")] = {
+            "points": tuple(float(node.get(a)) for a in ("x1", "y1", "x2", "y2")),
+            "stops": stops,
+        }
+    return gradients
+
+
 def read_svg(path: Path):
-    """Return (viewBox_width, [(fill, opacity, path_d), ...]) for a paper.js export."""
+    """Return (viewBox_width, [(fill, opacity, path_d), ...]) for a stage 1 SVG.
+
+    `fill` is a "#rrggbb" string, or a gradient dict from read_gradients for `fill="url(#id)"`."""
     root = ET.parse(path).getroot()
     vb = root.get("viewBox")
     width = float(vb.split(",")[2]) if vb else 0.0
+    gradients = read_gradients(root)
     layers = []
     for group in root.iter(f"{SVG_NS}g"):
         fill = group.get("fill")
         if not fill or fill == "none":
             continue
+        if fill.startswith("url(#"):
+            fill = gradients[fill[len("url(#"):-1]]
         # Quantization can land on semi-transparent colours; paper.js writes those as
         # fill-opacity on the group. 672 of the 818 glyphs carry one, so ignoring it
         # silently washes out most of the font.
@@ -151,6 +186,12 @@ def read_svg(path: Path):
     return width, layers
 
 
+def svg_inner(path: Path) -> str:
+    """Everything between the root <svg> tag and </svg>: the markup the SVG table reuses as is."""
+    text = path.read_text()
+    return text.split(">", 1)[1].rsplit("</svg>", 1)[0]
+
+
 def parse_colour(fill: str):
     fill = fill.strip()
     if not fill.startswith("#") or len(fill) != 7:
@@ -158,9 +199,38 @@ def parse_colour(fill: str):
     return tuple(int(fill[i:i + 2], 16) / 255 for i in (1, 3, 5)) + (1.0,)
 
 
-def build(out_dir: Path) -> bytes:
+def gradient_paint(gradient, opacity, xform, palette_for):
+    """A COLRv1 PaintLinearGradient from a read_gradients entry (canvas space -> font units).
+
+    COLRv1 takes three points: the gradient runs from p0 to p1, and p2 only fixes the
+    orientation of the colour lines, which are perpendicular to p0->p2. Stage 1 gradients
+    are vertical, so p2 sits to the right of p0 and the lines come out horizontal."""
+    x1, y1, x2, y2 = gradient["points"]
+    p0, p1 = xform.transformPoint((x1, y1)), xform.transformPoint((x2, y2))
+    p2 = (p0[0] + 100, p0[1])
+    return {
+        "Format": 4,                                   # PaintLinearGradient
+        "ColorLine": {
+            "Extend": "pad",
+            "ColorStop": [{"StopOffset": offset,
+                           "PaletteIndex": palette_for(parse_colour(colour)),
+                           "Alpha": alpha * opacity}
+                          for offset, colour, alpha in gradient["stops"]],
+        },
+        "x0": round(p0[0]), "y0": round(p0[1]),
+        "x1": round(p1[0]), "y1": round(p1[1]),
+        "x2": round(p2[0]), "y2": round(p2[1]),
+    }
+
+
+def build(out_dir: Path, images_dir: Path | None = None, formats=FORMATS) -> bytes:
+    unknown = set(formats) - set(FORMATS)
+    if unknown:
+        raise SystemExit(f"unknown colour format(s) {sorted(unknown)}; choose from {list(FORMATS)}")
     # Collect the stage 1 output. Sorted, so the glyph order is reproducible.
-    files = sorted(out_dir.glob("*.svg"))
+    # `<glyph>.flat.svg` is not a glyph: it is the flat-colour twin of a gradient glyph, read
+    # below as that glyph's COLRv0 layers.
+    files = sorted(f for f in out_dir.glob("*.svg") if not f.name.endswith(".flat.svg"))
     if not files:
         raise SystemExit(f"no SVGs in {out_dir}")
 
@@ -186,6 +256,36 @@ def build(out_dir: Path) -> bytes:
     palette: list[tuple] = []
     palette_index: dict[tuple, int] = {}
     shape_index: dict[str, str] = {}      # transformed outline key -> shape glyph name
+    flat_layers: dict[str, list] = {}     # COLRv0: base -> [(shape, palette index with alpha)]
+    svg_markup: dict[str, str] = {}       # OpenType-SVG: base -> the stage 1 defs and groups
+    overlays: set[str] = set()            # base glyphs with a zero advance
+
+    def shape_for(d):
+        """(shared outline glyph, its outline) for canvas path `d`, in font units; None if empty."""
+        record = RecordingPen()
+        parse_path(d, TransformPen(record, xform))
+        if not record.value:
+            return None
+        key = repr(record.value)                       # identical outline -> one glyph
+        shape = shape_index.get(key)
+        if shape is None:
+            shape = f"s{len(shape_index):05d}"
+            pen = TTGlyphPen(None)
+            record.replay(pen)
+            glyphs[shape] = pen.glyph()
+            glyph_order.append(shape)
+            advances[shape] = 0
+            shape_index[key] = shape
+        return shape, record
+
+    def palette_for(colour):
+        """CPAL index of an RGBA colour, adding it on first use."""
+        idx = palette_index.get(colour)
+        if idx is None:
+            idx = len(palette)
+            palette.append(colour)
+            palette_index[colour] = idx
+        return idx
 
     # One pass per SVG. Each file becomes exactly one cmapped colour glyph.
     for path in files:
@@ -207,44 +307,41 @@ def build(out_dir: Path) -> bytes:
         # One SVG group becomes one COLR layer. `bounds` tracks the ink of them all.
         bounds = BoundsPen(None)
         layer_list = []
+
         for fill, opacity, d in layers:
-            # Replay the SVG path through the transform, into font units.
-            record = RecordingPen()
-            parse_path(d, TransformPen(record, xform))
-            if not record.value:
+            found = shape_for(d)
+            if found is None:
                 continue
+            shape, record = found
             record.replay(bounds)
+            if isinstance(fill, dict):
+                paint = gradient_paint(fill, opacity, xform, palette_for)
+            else:
+                # Colours go into the CPAL palette once each. Alpha stays per layer.
+                paint = {"Format": 2, "PaletteIndex": palette_for(parse_colour(fill)), "Alpha": opacity}
+            layer_list.append({"Format": 10, "Glyph": shape, "Paint": paint})   # PaintGlyph
 
-            # Deduplicate outlines. The 688 banners share very few distinct shapes.
-            key = repr(record.value)                   # identical outline -> one glyph
-            shape = shape_index.get(key)
-            if shape is None:
-                shape = f"s{len(shape_index):05d}"
-                pen = TTGlyphPen(None)
-                record.replay(pen)
-                glyphs[shape] = pen.glyph()
-                glyph_order.append(shape)
-                advances[shape] = 0
-                shape_index[key] = shape
-
-            # Deduplicate colours into the CPAL palette. Alpha stays per layer.
-            colour = parse_colour(fill)
-            idx = palette_index.get(colour)
-            if idx is None:
-                idx = len(palette)
-                palette.append(colour)
-                palette_index[colour] = idx
-
-            layer_list.append({
-                "Format": 10,                          # PaintGlyph
-                "Glyph": shape,
-                "Paint": {"Format": 2, "PaletteIndex": idx, "Alpha": opacity},
-            })
+        # COLRv0 layers: the glyph's own flat layers, or its `.flat.svg` twin when it has gradients.
+        # v0 has no paint alpha, so the alpha is baked into its own palette entry.
+        flat_path = path.with_name(stem + ".flat.svg")
+        flat_source = read_svg(flat_path)[1] if flat_path.exists() else layers
+        flat = []
+        for fill, opacity, d in (flat_source if "colrv0" in formats else ()):
+            if isinstance(fill, dict):
+                raise ValueError(f"{path.name} has a gradient and no {flat_path.name} fallback")
+            found = shape_for(d)
+            if found is not None:
+                flat.append((found[0], palette_for(parse_colour(fill)[:3] + (opacity,))))
+        markup = svg_inner(path)
 
         # Derive the clip box from the real ink bounds of every layer.
         if not layer_list or bounds.bounds is None:
             continue
         colour_glyphs[base] = {"Format": 1, "Layers": layer_list}
+        flat_layers[base] = flat
+        svg_markup[base] = markup
+        if width == 0:
+            overlays.add(base)
         x0, y0, x1, y1 = bounds.bounds
         clip_boxes[base] = (
             round(x0), round(y0) - CLIP_PAD_Y,
@@ -296,8 +393,25 @@ def build(out_dir: Path) -> bytes:
                 panose=PANOSE, **TYPO_DECORATION)
     fb.setupPost(keepGlyphNames=False)
     # The colour tables come last: CPAL holds the palette, COLR the per-glyph layers.
-    fb.setupCPAL([palette])
-    fb.setupCOLR(colour_glyphs, version=1, allowLayerReuse=True, clipBoxes=clip_boxes)
+    if "colrv1" in formats or "colrv0" in formats:
+        fb.setupCPAL([palette])
+    if "colrv1" in formats:
+        fb.setupCOLR(colour_glyphs, version=1, allowLayerReuse=True, clipBoxes=clip_boxes)
+    if "colrv0" in formats:
+        color_formats.add_colr_v0(fb.font, flat_layers)
+    if "svg" in formats:
+        color_formats.add_svg_table(fb.font, svg_markup)
+    if "sbix" in formats:
+        bitmaps, left = {}, {}
+        for base in colour_glyphs:
+            image = Path(images_dir or "") / f"{base[len('g_ue'):]}.png"
+            if images_dir is not None and image.exists():
+                bitmaps[base] = color_formats.png_cell(image.read_bytes())
+                left[base] = -620 if base in overlays else -20
+        if bitmaps:
+            color_formats.add_sbix(fb.font, bitmaps, left_by_glyph=left)
+        elif images_dir is not None:
+            print(f"sbix skipped: no banner PNGs in {images_dir}", file=sys.stderr)
 
     # Serialize to memory. main() owns the write to disk.
     buf = io.BytesIO()
@@ -309,13 +423,26 @@ def build(out_dir: Path) -> bytes:
 
 
 def main() -> int:
-    out_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "out")
-    dest = Path(sys.argv[2] if len(sys.argv) > 2 else "build/Font.ttf")
+    parser = argparse.ArgumentParser(description="Compile ./out/*.svg into a colour font.")
+    parser.add_argument("out_dir", nargs="?", default="out", type=Path)
+    parser.add_argument("dest", nargs="?", default="build/Font.ttf", type=Path)
+    parser.add_argument("--images", type=Path, default=None,
+                        help="directory of source PNGs; enables the sbix bitmap strike")
+    parser.add_argument("--web", type=Path, default=None,
+                        help="also write the split web fonts, a stylesheet and a check page to this directory")
+    parser.add_argument("--formats", default=",".join(FORMATS),
+                        help=f"comma list of colour formats to include (default: all of {','.join(FORMATS)})")
+    args = parser.parse_args()
+    out_dir, dest = args.out_dir, args.dest
     t0 = time.time()
-    data = build(out_dir)
+    data = build(out_dir, args.images, tuple(f for f in args.formats.split(",") if f))
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
     print(f"wrote {dest} ({len(data)} bytes) in {time.time() - t0:.2f}s")
+    if args.web:
+        sizes = web_fonts.write(args.web, lambda formats: build(out_dir, None, formats))
+        for name, size in sizes.items():
+            print(f"wrote {args.web / name} ({size} bytes)")
     return 0
 
 

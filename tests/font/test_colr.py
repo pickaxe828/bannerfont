@@ -7,7 +7,19 @@ from tests.font.fontcase import BANNER_ADVANCE, RealFontTestCase
 from tests.font_spec import BANNER_CODEPOINTS, COLORS, PATTERNS, banner_cp
 
 PAINT_COLR_LAYERS = 1
+PAINT_SOLID = 2
+PAINT_LINEAR_GRADIENT = 4
 PAINT_GLYPH = 10
+
+
+def palette_indices(paint):
+    """CPAL indices a PaintGlyph's fill uses: one for a solid, one per stop for a gradient."""
+    fill = paint.Paint
+    if fill.Format == PAINT_SOLID:
+        return [fill.PaletteIndex]
+    if fill.Format == PAINT_LINEAR_GRADIENT:
+        return [stop.PaletteIndex for stop in fill.ColorLine.ColorStop]
+    raise AssertionError(f"unexpected fill format {fill.Format}")
 
 
 def shape_glyphs(colr, paint):
@@ -50,7 +62,7 @@ class ColrTest(RealFontTestCase):
     def test_every_paint_uses_a_palette_entry_that_exists(self):
         size = len(self.font["CPAL"].palettes[0])
         bad = [i for i, p in enumerate(self.colr.LayerList.Paint)
-               if p.Format == PAINT_GLYPH and p.Paint.PaletteIndex >= size]
+               if p.Format == PAINT_GLYPH and any(i >= size for i in palette_indices(p))]
         self.assertEqual(bad, [])
 
     def test_every_base_is_one_banner_wide(self):
