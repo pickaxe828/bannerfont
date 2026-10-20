@@ -1,19 +1,21 @@
 // The `bannerfont` command line: build, extract, pixilate, font, test and prune.
 // Citty parses the arguments, Clack draws the UI. The stages themselves live in extract.ts,
 // pixilate.ts and font.ts; this file only resolves options and reports.
+// A command ends in "Done" (or its own message) when its body returns, and in "Failed" with a non-zero
+// exit code when its body throws or when it is given a flag it does not declare.
 import { cancel, intro, isCancel, log, outro, select, text } from "@clack/prompts"
-import { defineCommand, runMain } from "citty"
+import { defineCommand, runMain, type ArgsDef, type ParsedArgs } from "citty"
 
 import { DEFAULT_CACHE_DIR, DEFAULT_IMAGES_DIR, DEFAULT_MC_VERSION, runExtract } from "./extract.ts"
 import { FONT_PATH, SVG_DIR, buildFont, testFont } from "./font.ts"
-import { DEFAULT_COLORS, parseColors, resolveValue } from "./options.ts"
+import { DEFAULT_COLORS, parseColors, resolveValue, unknownFlags } from "./options.ts"
 import { pixilatePaths } from "./pixilate.ts"
 import { prune } from "./prune.ts"
 
 const interactive = () => Boolean(process.stdin.isTTY && process.stdout.isTTY)
 
-/** Fails the process after a cancelled prompt. */
-function answer<T>(value: T): Exclude<T, symbol> {
+/** Passes a prompt's answer on, or exits non-zero when the user cancelled it. */
+function unlessCancelled<T>(value: T): Exclude<T, symbol> {
   if (isCancel(value)) {
     cancel("Cancelled")
     process.exit(1)
@@ -22,35 +24,63 @@ function answer<T>(value: T): Exclude<T, symbol> {
 }
 
 const askText = (message: string) => async (initial: string) =>
-  answer(await text({ message, initialValue: initial, defaultValue: initial }))
+  unlessCancelled(await text({ message, initialValue: initial, defaultValue: initial }))
 
-const mcVersion = (flag: string | undefined) =>
-  resolveValue({ flag, interactive: interactive(), ask: askText("Minecraft version"), fallback: DEFAULT_MC_VERSION })
+/** The flag when given; otherwise a prompt on a TTY, or the default elsewhere. */
+const flagOrAsk = (flag: string | undefined, message: string, fallback: string) =>
+  resolveValue({ flag, interactive: interactive(), ask: askText(message), fallback })
 
-/** Runs a command body: any thrown error is shown and sets a non-zero exit code. */
-function command(title: string, body: () => Promise<void>) {
-  return async () => {
-    intro(`bannerfont ${title}`)
-    try {
-      await body()
-    } catch (err) {
-      log.error(err instanceof Error ? err.message : String(err))
-      outro("Failed")
-      process.exitCode = 1
-    }
-  }
+const mcVersion = (flag: string | undefined) => flagOrAsk(flag, "Minecraft version", DEFAULT_MC_VERSION)
+
+/** Which PNG file or folder to trace: the positional arguments, or one prompted for. */
+async function pixilateInputs(given: string[]): Promise<string[]> {
+  if (given.length > 0) return given
+  return [await flagOrAsk(undefined, "PNG file or folder to trace", DEFAULT_IMAGES_DIR)]
 }
 
-const str = (description: string, alias?: string | string[]) => ({ type: "string" as const, description, alias })
+interface CommandSpec<A extends ArgsDef> {
+  name: string
+  description: string
+  args?: A
+  /** Does the work. Throw to fail; return the closing message to replace "Done". */
+  run: (args: ParsedArgs<A>) => Promise<string | void>
+}
+
+/** A command that shows an intro and an outro, and turns an unknown flag or a thrown error into a failure. */
+function stage<A extends ArgsDef>({ name, description, args, run }: CommandSpec<A>) {
+  return defineCommand({
+    meta: { name, description },
+    args,
+    run: async (context) => {
+      intro(`bannerfont ${name}`)
+      try {
+        const unknown = unknownFlags(context.args, args)
+        if (unknown.length > 0) {
+          throw new Error(`Unknown flag${unknown.length > 1 ? "s" : ""}: ${unknown.join(", ")} (see \`bannerfont ${name} --help\`)`)
+        }
+        outro((await run(context.args)) ?? "Done")
+      } catch (err) {
+        log.error(err instanceof Error ? err.message : String(err))
+        outro("Failed")
+        process.exitCode = 1
+      }
+    },
+  })
+}
+
+const stringArg = <O extends { alias?: string | string[]; default?: string } = {}>(description: string, options?: O) =>
+  ({ type: "string" as const, description, ...options }) as { type: "string"; description: string } & O
 
 const mcVersionArg = {
-  "mc-version": str(`Minecraft release to read the textures from (default ${DEFAULT_MC_VERSION})`),
+  "mc-version": stringArg(`Minecraft release to read the textures from (default ${DEFAULT_MC_VERSION})`),
 }
 const cacheArg = {
-  cache: str(`Folder for downloaded client jars (default ${DEFAULT_CACHE_DIR})`),
+  cache: stringArg("Folder for downloaded client jars", { default: DEFAULT_CACHE_DIR }),
 }
 const colorsArg = {
-  colors: str(`Colours per image, including the transparent layer (default ${DEFAULT_COLORS})`, ["c", "colours"]),
+  colors: stringArg(`Colors per image, including the transparent layer (default ${DEFAULT_COLORS})`, {
+    alias: ["c", "colours"],
+  }),
 }
 
 async function extractStage(options: { version: string; output: string; cache: string }) {
@@ -77,121 +107,93 @@ async function fontStage() {
   log.success(`Wrote ${FONT_PATH}`)
 }
 
-/** Runs the font tests. Returns false when they fail; throws when the font is missing. */
-async function testStage(): Promise<boolean> {
+/** Runs the font tests. Throws when they fail or when the font is missing. */
+async function testStage() {
   log.step("Running the font tests")
   const { ok, output } = await testFont()
-  if (ok) {
-    log.message(output.trim())
-    log.success("Font tests passed")
-  } else {
-    log.error(`Font tests failed\n${output.trim()}`)
-  }
-  return ok
+  if (!ok) throw new Error(`Font tests failed\n${output.trim()}`)
+  log.message(output.trim())
+  log.success("Font tests passed")
 }
 
-const extract = defineCommand({
-  meta: { name: "extract", description: "Build the banner PNGs from the Minecraft client jar" },
+const extractCommand = stage({
+  name: "extract",
+  description: "Build the banner PNGs from the Minecraft client jar",
   args: {
     ...mcVersionArg,
-    output: str(`Where the PNGs go (default ${DEFAULT_IMAGES_DIR})`, "o"),
+    output: stringArg("Where the PNGs go", { alias: "o", default: DEFAULT_IMAGES_DIR }),
     ...cacheArg,
   },
-  run: ({ args }) =>
-    command("extract", async () => {
-      const version = await mcVersion(args["mc-version"])
-      await extractStage({ version, output: args.output ?? DEFAULT_IMAGES_DIR, cache: args.cache ?? DEFAULT_CACHE_DIR })
-      outro("Done")
-    })(),
+  run: async (args) => {
+    const version = await mcVersion(args["mc-version"])
+    await extractStage({ version, output: args.output, cache: args.cache })
+  },
 })
 
-const pixilate = defineCommand({
-  meta: { name: "pixilate", description: "Trace banner PNGs (files or folders) into SVGs" },
+const pixilateCommand = stage({
+  name: "pixilate",
+  description: "Trace banner PNGs (files or folders) into SVGs",
   args: {
-    output: str(`Where the SVGs go (default ./${SVG_DIR})`, "o"),
+    output: stringArg("Where the SVGs go", { alias: "o", default: SVG_DIR }),
     ...colorsArg,
   },
-  run: ({ args }) =>
-    command("pixilate", async () => {
-      const colors = parseColors(args.colors)
-      const given = args._.map(String)
-      const paths =
-        given.length > 0
-          ? given
-          : [
-              await resolveValue<string>({
-                flag: undefined,
-                interactive: interactive(),
-                ask: askText("PNG file or folder to trace"),
-                fallback: DEFAULT_IMAGES_DIR,
-              }),
-            ]
-      await pixilateStage(paths, args.output ?? `./${SVG_DIR}`, colors)
-      outro("Done")
-    })(),
+  run: async (args) => {
+    const colors = parseColors(args.colors)
+    await pixilateStage(await pixilateInputs(args._.map(String)), args.output, colors)
+  },
 })
 
-const font = defineCommand({
-  meta: { name: "font", description: `Compile ${SVG_DIR}/*.svg into ${FONT_PATH}` },
-  run: command("font", async () => {
-    await fontStage()
-    outro("Done")
-  }),
+const fontCommand = stage({
+  name: "font",
+  description: `Compile ${SVG_DIR}/*.svg into ${FONT_PATH}`,
+  run: fontStage,
 })
 
-const test = defineCommand({
-  meta: { name: "test", description: `Run the font tests against ${FONT_PATH}` },
-  run: command("test", async () => {
-    if (!(await testStage())) {
-      outro("Failed")
-      process.exitCode = 1
-      return
-    }
-    outro("Done")
-  }),
+const testCommand = stage({
+  name: "test",
+  description: `Run the font tests against ${FONT_PATH}`,
+  run: testStage,
 })
 
-const prune_ = defineCommand({
-  meta: { name: "prune", description: `Clear the intermediate SVGs in ${SVG_DIR}` },
-  run: command("prune", async () => {
-    prune(`./${SVG_DIR}`)
-    log.success(`Cleared ./${SVG_DIR}`)
-    outro("Done")
-  }),
+const pruneCommand = stage({
+  name: "prune",
+  description: `Clear the intermediate SVGs in ${SVG_DIR}`,
+  run: async () => {
+    prune()
+    log.success(`Cleared ${SVG_DIR}`)
+  },
 })
 
-const build = defineCommand({
-  meta: { name: "build", description: "Full build: extract, pixilate, font, then the font tests" },
+const buildCommand = stage({
+  name: "build",
+  description: "Full build: extract, pixilate, font, then the font tests",
   args: { ...mcVersionArg, ...cacheArg, ...colorsArg },
-  run: ({ args }) =>
-    command("build", async () => {
-      const colors = parseColors(args.colors)
-      const version = await mcVersion(args["mc-version"])
-      await extractStage({ version, output: DEFAULT_IMAGES_DIR, cache: args.cache ?? DEFAULT_CACHE_DIR })
-      await pixilateStage([DEFAULT_IMAGES_DIR], `./${SVG_DIR}`, colors)
-      await fontStage()
-      // The font stays on disk when the tests fail, but the build still fails
-      if (!(await testStage())) {
-        outro(`Failed (${FONT_PATH} was kept)`)
-        process.exitCode = 1
-        return
-      }
-      outro("Built")
-    })(),
+  run: async (args) => {
+    const colors = parseColors(args.colors)
+    const version = await mcVersion(args["mc-version"])
+    await extractStage({ version, output: DEFAULT_IMAGES_DIR, cache: args.cache })
+    await pixilateStage([DEFAULT_IMAGES_DIR], SVG_DIR, colors)
+    await fontStage()
+    // The font stays on disk when the tests fail, but the build still fails
+    await testStage()
+    return "Built"
+  },
 })
 
-const subCommands = { build, extract, pixilate, font, test, prune: prune_ }
-
-export const main = defineCommand({
-  meta: { name: "bannerfont", description: "Turn Minecraft banner textures into a COLRv1 colour font" },
-  subCommands,
-})
+const subCommands = {
+  build: buildCommand,
+  extract: extractCommand,
+  pixilate: pixilateCommand,
+  font: fontCommand,
+  test: testCommand,
+  prune: pruneCommand,
+}
 
 /** With no command on a TTY, ask which one to run; otherwise citty prints the usage and exits non-zero. */
 async function chooseRawArgs(rawArgs: string[]): Promise<string[]> {
   if (rawArgs.length > 0 || !interactive()) return rawArgs
   intro("bannerfont")
-  const choice = answer(
+  const choice = unlessCancelled(
     await select({
       message: "What do you want to do?",
       options: Object.entries(subCommands).map(([value, cmd]) => ({
@@ -203,5 +205,10 @@ async function chooseRawArgs(rawArgs: string[]): Promise<string[]> {
   )
   return [choice]
 }
+
+const main = defineCommand({
+  meta: { name: "bannerfont", description: "Turn Minecraft banner textures into a COLRv1 color font" },
+  subCommands,
+})
 
 await runMain(main, { rawArgs: await chooseRawArgs(process.argv.slice(2)) })

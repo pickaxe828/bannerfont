@@ -31,3 +31,25 @@ export function parseColors(value: string | number | undefined): number {
   }
   return n
 }
+
+/** The flags citty accepts for a command, as declared in its `args`. */
+export type DeclaredFlags = Record<string, { type?: string; alias?: string | string[] }>
+
+/** citty treats `mc-version` and `mcVersion` as the same flag, so compare without case and dashes. */
+const normalize = (flag: string) => flag.replace(/-/g, "").toLowerCase()
+
+/**
+ * Citty keeps flags it does not know in the parsed arguments instead of rejecting them, so
+ * `build -o dir` would silently ignore `-o`. Returns the flags (with their dashes) that the
+ * command does not declare, in the order they appear.
+ */
+export function unknownFlags(parsed: Record<string, unknown>, declared: DeclaredFlags = {}): string[] {
+  const known = new Set<string>()
+  for (const [name, def] of Object.entries(declared)) {
+    known.add(normalize(name))
+    for (const alias of [def.alias ?? []].flat()) known.add(normalize(alias))
+  }
+  return Object.keys(parsed)
+    .filter((key) => key !== "_" && !known.has(normalize(key)))
+    .map((key) => (key.length === 1 ? `-${key}` : `--${key}`))
+}
