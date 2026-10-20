@@ -2,18 +2,21 @@
 
 import unittest
 
-from fontcase import (BANNER_ADVANCE, BANNER_CODEPOINTS, BASE_CODEPOINTS, OVERLAY_CODEPOINTS,
-                      RealFontTestCase)
+from tests.font.fontcase import (BANNER_ADVANCE, BASE_CODEPOINTS, OVERLAY_CODEPOINTS,
+                                 RealFontTestCase)
+from tests.font_spec import BANNER_CODEPOINTS
 
 CONTROLS = [0xE00A, 0xE00B, 0xE00D, 0xE00E, 0xE00F] + list(range(0xE01A, 0xE020))
 SPACE_ZERO = 0xF040                       # U+F040 + n is a space of n banners
 UCFFF7 = 0xCFFF7
 
 
-def wrong(font_case, codepoints, expected):
-    """(codepoint, advance) for every codepoint whose advance differs from `expected`."""
-    return [(hex(cp), font_case.advance(cp)) for cp in codepoints
-            if font_case.advance(cp) != expected]
+def codepoints_with_wrong_advance(font_case, codepoints, expected):
+    """(codepoint, advance) for every codepoint whose advance is not `expected`, which is
+    an int, or a function of the codepoint."""
+    want = expected if callable(expected) else (lambda cp: expected)
+    advances = {cp: font_case.advance(cp) for cp in codepoints}
+    return [(hex(cp), adv) for cp, adv in advances.items() if adv != want(cp)]
 
 
 class CmapTest(RealFontTestCase):
@@ -28,28 +31,28 @@ class CmapTest(RealFontTestCase):
 class AdvanceTest(RealFontTestCase):
     def test_base_patterns_advance_one_banner(self):
         self.assertEqual(len(BASE_CODEPOINTS), 16)
-        self.assertEqual(wrong(self, BASE_CODEPOINTS, BANNER_ADVANCE), [])
+        self.assertEqual(codepoints_with_wrong_advance(self, BASE_CODEPOINTS, BANNER_ADVANCE), [])
 
     def test_overlay_patterns_advance_nothing(self):
         self.assertEqual(len(OVERLAY_CODEPOINTS), 16 * 42)
-        self.assertEqual(wrong(self, OVERLAY_CODEPOINTS, 0), [])
+        self.assertEqual(codepoints_with_wrong_advance(self, OVERLAY_CODEPOINTS, 0), [])
 
     def test_control_gaps_and_ucfff7_advance_nothing(self):
-        self.assertEqual(wrong(self, CONTROLS + [UCFFF7], 0), [])
+        self.assertEqual(codepoints_with_wrong_advance(self, CONTROLS + [UCFFF7], 0), [])
 
     def test_space_control_character_advances_one_banner(self):
         self.assertEqual(self.advance(0xE00C), BANNER_ADVANCE)
 
     def test_space_block_advances_600_per_banner(self):
         positive = range(SPACE_ZERO, SPACE_ZERO + 64)                  # U+F040 .. U+F07F
-        bad = [(hex(cp), self.advance(cp)) for cp in positive
-               if self.advance(cp) != BANNER_ADVANCE * (cp - SPACE_ZERO)]
-        self.assertEqual(bad, [])
+        self.assertEqual(codepoints_with_wrong_advance(
+            self, positive, lambda cp: BANNER_ADVANCE * (cp - SPACE_ZERO)), [])
 
     def test_negative_spaces_are_clamped_to_zero_advance(self):
         # Pins today's behaviour (CLAUDE.md, "Negative spaces do not work yet"). When
         # negative spaces are implemented this fails, and is meant to: replace it then.
-        self.assertEqual(wrong(self, range(SPACE_ZERO - 64, SPACE_ZERO), 0), [])
+        self.assertEqual(codepoints_with_wrong_advance(
+            self, range(SPACE_ZERO - 64, SPACE_ZERO), 0), [])
 
 
 class LsbTest(RealFontTestCase):

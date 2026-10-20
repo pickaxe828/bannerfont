@@ -3,8 +3,8 @@ tests/vendor_identity.py, shared with tests/code/test_vendor.py (synthetic build
 
 import unittest
 
-from fontcase import RealFontTestCase
-from vendor_identity import NAME_ID_UNIQUE_ID, NAME_ID_VENDOR_URL, REPO_URL, VENDOR_ID, name_record
+from tests.font.fontcase import RealFontTestCase
+from tests.vendor_identity import NAME_ID_UNIQUE_ID, NAME_ID_VENDOR_URL, REPO_URL, VENDOR_ID, name_record
 
 
 class VendorIdentityTest(RealFontTestCase):

@@ -3,7 +3,8 @@ stays inside the base's cell (so it composites on top of the base, not beside it
 
 import unittest
 
-from fontcase import (BANNER_ADVANCE, BANNER_CODEPOINTS, COLORS, PATTERNS, RealFontTestCase, banner_cp)
+from tests.font.fontcase import BANNER_ADVANCE, RealFontTestCase
+from tests.font_spec import BANNER_CODEPOINTS, COLORS, PATTERNS, banner_cp
 
 PAINT_COLR_LAYERS = 1
 PAINT_GLYPH = 10
@@ -52,14 +53,20 @@ class ColrTest(RealFontTestCase):
                if p.Format == PAINT_GLYPH and p.Paint.PaletteIndex >= size]
         self.assertEqual(bad, [])
 
+    def test_every_base_is_one_banner_wide(self):
+        bad = []
+        for x in COLORS:
+            x0, _, x1, _ = self.ink(banner_cp(x, 0))
+            if x1 - x0 != BANNER_ADVANCE:
+                bad.append((f"{x:x}", x1 - x0))
+        self.assertEqual(bad, [])
+
     def test_every_overlay_lands_inside_its_base(self):
         # The pen has stepped one banner past the base when an overlay is drawn, so the
         # overlay's ink, moved back by that advance, has to sit in the base's ink box.
-        # A base is one banner wide; an overlay outside it would hang off the cell.
         bad = []
         for x in COLORS:
             bx0, by0, bx1, by1 = self.ink(banner_cp(x, 0))
-            self.assertEqual(bx1 - bx0, BANNER_ADVANCE, f"colour {x:x} base is not one banner wide")
             for yy in PATTERNS:
                 if yy == 0:
                     continue

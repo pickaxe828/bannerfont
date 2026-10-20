@@ -4,10 +4,8 @@ import re
 import subprocess
 import unittest
 
-from fontcase import BANNER_CODEPOINTS, FONT_PATH, RealFontTestCase, require_tool
-
-MISSING_BOX = ((-620, -20), (-250, 950))   # x range, y range, as build_font.missing_glyph draws it
-MISSING_GID = 2            # .notdef, .blank, .missing: the order build_font.py appends them in
+from tests.font.fontcase import FONT_PATH, RealFontTestCase, require_tool
+from tests.font_spec import BANNER_CODEPOINTS, MISSING_GID, MISSING_X_RANGE, MISSING_Y_RANGE
 
 
 def shaped_gids(text: str) -> list[int]:
@@ -37,8 +35,8 @@ class MissingGlyphTest(RealFontTestCase):
         # looks like, so a reordered glyph table fails here instead of fooling the next test.
         glyph = self.font["glyf"][self.font.getGlyphOrder()[MISSING_GID]]
         self.assertEqual(glyph.numberOfContours, 2)
-        self.assertEqual((glyph.xMin, glyph.xMax), MISSING_BOX[0])
-        self.assertEqual((glyph.yMin, glyph.yMax), MISSING_BOX[1])
+        self.assertEqual((glyph.xMin, glyph.xMax), MISSING_X_RANGE)
+        self.assertEqual((glyph.yMin, glyph.yMax), MISSING_Y_RANGE)
 
     def test_no_banner_codepoint_maps_to_missing(self):
         order = self.font.getGlyphOrder()
