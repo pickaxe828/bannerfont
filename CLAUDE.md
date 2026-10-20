@@ -24,8 +24,10 @@ pnpm bannerfont prune        # clear ./out
 pnpm bannerfont              # no command: a select on a TTY, usage and exit 1 otherwise
 
 pnpm typecheck               # tsc --noEmit
-pnpm test                    # node:test through tsx: src/**/*.test.ts
-uv run python -m unittest discover tests    # font build tests (.missing glyph)
+pnpm test                    # TS unit tests (src/**/*.test.ts) + tests/code (needs `uv` on PATH); never tests/font
+uv run python -m unittest discover -s tests/code -t .   # tests/code alone (synthetic build)
+pnpm test:font               # tests/font on build/Font.ttf, JSON lines on stdout; needs a built font
+uv run python -m unittest discover -s tests/font -t .   # same tests, plain unittest; skips without a font
 ```
 
 `bannerfont` is also the `bin` of the package (`bin/bannerfont.mjs`, which registers tsx and loads `src/cli.ts`). All paths are relative to the current directory, so run it from the repo root.
@@ -35,9 +37,14 @@ uv run python -m unittest discover tests    # font build tests (.missing glyph)
 - `extract` flags: `--mc-version <id>` (default `1.21.2`), `-o/--output` (default `./images`), `--cache` (default `./.cache`). `fflate` is a runtime dependency of it, for reading the zip.
 - `pixilate` flags: `-o/--output` (default `./out`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args; with none, the default is `./images`. In a directory only `*.png` files are converted.
 - `font` runs `uv run python src/build_font.py out build/Font.ttf`. Its output, stderr included, is shown, and a non-zero exit fails the command.
-- `test` runs only the font tests (`uv run python -m unittest discover tests`) and fails if `build/Font.ttf` is missing. `build` keeps `build/Font.ttf` and exits non-zero if those tests fail. Code tests stay on `pnpm test`.
+- `test` runs only the real-font suite, `uv run python tests/font/run.py` (the JSON-lines runner, which sets `REQUIRE_REAL_FONT=1`), and shows one line per test result; it fails if `build/Font.ttf` is missing or any test fails. `build` keeps `build/Font.ttf` and exits non-zero if those tests fail. Code tests stay on `pnpm test`.
 
-TypeScript runs through **tsx** (`pnpm bannerfont` → `tsx src/cli.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage, the PNG codec, the option resolution, the pixilate stage, the font stage wiring (with an injected runner) and `prune`. The font build has its own stdlib `unittest` suite in `tests/` (`tests/test_missing_glyph.py`; `tests/test_vendor.py` for the vendor ID `achVendID`, the vendor URL and the unique font identifier), run with `bannerfont test` or `uv run python -m unittest discover tests`. `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
+TypeScript runs through **tsx** (`pnpm bannerfont` → `tsx src/cli.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage, the PNG codec, the option resolution, the pixilate stage, the font stage wiring (with an injected runner) and `prune`. Python tests are stdlib `unittest` and live in two suites:
+
+- **`tests/code/`** is the synthetic suite: it calls `build_font.build()` on tiny hand-written SVGs and needs no build output (`test_missing_glyph.py` for the `.missing` glyph; `test_vendor.py` for the vendor ID `achVendID`, the vendor URL and the unique font identifier; `support.py` holds the SVG fixtures and `build_with`). `pnpm test` runs it after the TS tests.
+- **`tests/font/`** checks the real `build/Font.ttf`, read with fontTools. The nine font invariants are numbered in the module docstrings: 1-5 in `test_metrics.py` (cmap count, base/overlay/control/space advances, `lsb == xMin`), 6-7 in `test_coverage.py` (no ASCII, blank gid 1, nothing mapped to `.missing`), 8 in `test_colr.py` (COLR/CPAL, base width, overlay bounds, clip boxes), 9 in `test_identity.py` (vendor identity). `test_render.py` adds one `hb-view` render test: base plus one overlay must change pixels, and only inside the banner cell (not in the margins). `pnpm test` never runs it, because it needs a built font: build first (`pnpm bannerfont build`), then `pnpm bannerfont test` or `pnpm test:font`. `bannerfont test` runs this same `tests/font/run.py` and shows each JSON line as a Clack result (the failure message of a failing test is printed under it). `tests/font/run.py` prints one JSON object per result on stdout (`id`, `status`, `message`, `seconds`; `-k SUBSTRING` filters, repeatable) and exits 1 on any failure. It sets `REQUIRE_REAL_FONT=1`, so a missing font, `hb-shape` or `hb-view` is a failure there; under plain `unittest` each of them skips with a message on stderr, unless you set `REQUIRE_REAL_FONT=1` yourself. `BANNERFONT_TTF=<path>` points the suite at another font file, which is how to check that a test fails on a broken copy. The negative-space test pins today's clamping (U+F000-U+F03F advance 0) and is meant to fail when negative spaces are implemented. Both suites run as the `tests` package from the repo root (`-t .`) and share `tests/font_spec.py` (banner encoding, `.missing` box) and `tests/vendor_identity.py`.
+
+`src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
 
 **`canvas` is a native module and pnpm 10 blocks postinstall scripts by default.** `package.json` declares `pnpm.onlyBuiltDependencies: ["canvas", "esbuild"]` to permit it. If `pnpm install` ever prints `Ignored build scripts: canvas`, the binary is missing and *every* entry point dies with a confusing `ERR_INTERNAL_ASSERTION` from Node's CJS loader rather than a sensible "module not found" — pnpm won't re-run scripts for already-installed packages, so fix an existing tree with `pnpm rebuild canvas`. Since canvas 3 this installs a **prebuilt** binary (v2 used node-pre-gyp and compiled from source, needing Homebrew cairo/pango/pixman).
 
@@ -162,7 +169,7 @@ Two things this does **not** do, and cannot:
 
 `.missing` is a normal glyph, **not** gid 0: gid 0 stays `.notdef`, gid 1 stays the blank, `.missing` is gid 2. It advances 600 units (one banner), is a monochrome box outline in the banner cell, and has `lsb` equal to its `xMin` like every other glyph. This is the "real box-shaped glyph" the `.notdef` section says is needed, but only for banner codepoints. The ASCII behaviour does not change.
 
-The built font has **829** `cmap` entries: 688 banners, the 128 space glyphs, U+E00C, the 11 other control gaps and `ucfff7`. The font tests are in `tests/test_missing_glyph.py`.
+The built font has **829** `cmap` entries: 688 banners, the 128 space glyphs, U+E00C, the 11 other control gaps and `ucfff7`. The synthetic font tests are in `tests/code/test_missing_glyph.py`; the checks on the real font are in `tests/font/`.
 
 ### Per-pattern exceptions
 

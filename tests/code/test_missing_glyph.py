@@ -1,33 +1,11 @@
-"""Seam: build_font.build(out_dir) -> font bytes. Run: uv run python -m unittest discover tests"""
+"""Seam: build_with(svgs) -> compiled TTFont. Run: uv run python -m unittest discover -s tests/code -t ."""
 
-import io
-import sys
-import tempfile
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from tests.code.support import BASE_SVG, OVERLAY_SVG, build_with
+from tests.font_spec import BANNER_CODEPOINTS, MISSING_GID, MISSING_X_RANGE, MISSING_Y_RANGE
 
-from fontTools.ttLib import TTFont  # noqa: E402
-
-import build_font  # noqa: E402
-
-BASE_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,20,40">'
-            '<g fill="#ff0000"><path d="M0,0h20v40h-20z"/></g></svg>')
-OVERLAY_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0,0,0,40">'
-               '<g fill="#00ff00"><path d="M-20,0h10v10h-10z"/></g></svg>')
-
-# The pattern yy is written as two *decimal* digits but read as hex digits, so pattern 42
-# is U+E042 (not U+E02A) and the control gaps U+E00A..E00F, U+E01A..E01F stay unmapped.
-EXPECTED = {0xE000 + x * 0x100 + (yy // 10) * 0x10 + yy % 10
-            for x in range(16) for yy in range(43)}
-
-
-def build_with(stems_to_svg: dict[str, str]) -> TTFont:
-    with tempfile.TemporaryDirectory() as tmp:
-        for stem, svg in stems_to_svg.items():
-            (Path(tmp) / f"{stem}.svg").write_text(svg)
-        return TTFont(io.BytesIO(build_font.build(Path(tmp))))
+EXPECTED = set(BANNER_CODEPOINTS)
 
 
 class MissingGlyphTest(unittest.TestCase):
@@ -60,7 +38,7 @@ class MissingGlyphTest(unittest.TestCase):
             self.assertNotEqual(self.cmap.get(cp), self.name, hex(cp))
 
     def test_it_is_gid2_after_notdef_and_blank(self):
-        self.assertEqual(self.font.getGlyphID(self.name), 2)
+        self.assertEqual(self.font.getGlyphID(self.name), MISSING_GID)
 
     def test_advance_is_one_banner_and_lsb_equals_xmin(self):
         glyph = self.font["glyf"][self.name]
@@ -71,8 +49,8 @@ class MissingGlyphTest(unittest.TestCase):
     def test_it_is_a_box_with_a_hole_in_the_banner_cell(self):
         glyph = self.font["glyf"][self.name]
         self.assertEqual(glyph.numberOfContours, 2)
-        self.assertEqual((glyph.xMin, glyph.xMax), (-620, -20))
-        self.assertEqual((glyph.yMin, glyph.yMax), (-250, 950))
+        self.assertEqual((glyph.xMin, glyph.xMax), MISSING_X_RANGE)
+        self.assertEqual((glyph.yMin, glyph.yMax), MISSING_Y_RANGE)
 
     def test_it_is_monochrome(self):
         records = self.font["COLR"].table.BaseGlyphList.BaseGlyphPaintRecord
