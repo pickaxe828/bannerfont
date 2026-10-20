@@ -1,9 +1,9 @@
 """Run the real-font suite and print one JSON object per test result on stdout (JSON lines).
 
-    uv run python tests/font/run.py [-k SUBSTRING ...]
+    uv run python tests/font/run.py [-k SUBSTRING ...]   (-k may repeat; a test runs if any matches)
 
 Each line is {"id", "status", "message", "seconds"}, with status one of pass, fail, error,
-skip, expected_failure, unexpected_success. Nothing else goes to stdout; the human summary
+skip. Nothing else goes to stdout; the human summary
 is on stderr. The exit code is 1 if anything failed or errored, or if no test ran, else 0.
 
 Unlike a plain `python -m unittest discover -s tests/font`, which skips when build/Font.ttf
@@ -11,6 +11,7 @@ is missing, this runner sets REQUIRE_REAL_FONT=1 so a missing font is a failure:
 reading the output must never mistake "tested nothing" for "all good".
 """
 
+import argparse
 import json
 import os
 import sys
@@ -55,14 +56,6 @@ class JsonLinesResult(unittest.TestResult):
         super().addSkip(test, reason)
         self.emit(test, "skip", reason)
 
-    def addExpectedFailure(self, test, err):
-        super().addExpectedFailure(test, err)
-        self.emit(test, "expected_failure")
-
-    def addUnexpectedSuccess(self, test):
-        super().addUnexpectedSuccess(test)
-        self.emit(test, "unexpected_success")
-
 
 def _flatten(suite):
     for item in suite:
@@ -73,10 +66,14 @@ def _flatten(suite):
 
 
 def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Run tests/font and print JSON lines.")
+    parser.add_argument("-k", dest="patterns", action="append", default=[], metavar="SUBSTRING",
+                        help="only run tests whose id contains SUBSTRING (repeatable)")
+    patterns = parser.parse_args(argv).patterns
     os.environ["REQUIRE_REAL_FONT"] = "1"
-    sys.path.insert(0, str(HERE))
-    patterns = [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "-k"]
-    suite = unittest.defaultTestLoader.discover(str(HERE), pattern="test_*.py")
+    # Top level is the repo root, so test modules import as tests.font.* like the other suites.
+    suite = unittest.defaultTestLoader.discover(str(HERE), pattern="test_*.py",
+                                                top_level_dir=str(HERE.parents[1]))
     if patterns:
         suite = unittest.TestSuite(t for t in _flatten(suite)
                                    if any(p in t.id() for p in patterns))
