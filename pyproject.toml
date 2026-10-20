@@ -1,5 +1,5 @@
 [project]
-name = "ubef-font"
+name = "bannerfont"
 version = "1.0.0"
 description = "Compile Minecraft banner SVGs into a COLRv1 colour font"
 readme = "README.md"
