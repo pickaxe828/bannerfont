@@ -1,4 +1,4 @@
-"""Seam: build_with(svgs) -> compiled TTFont (from test_missing_glyph). Run: uv run python -m unittest discover tests"""
+"""Seam: build_with(svgs) -> compiled TTFont (from test_missing_glyph). Run: uv run python -m unittest discover -s tests/code"""
 
 import sys
 import unittest

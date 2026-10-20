@@ -1,4 +1,4 @@
-"""Seam: build_font.build(out_dir) -> font bytes. Run: uv run python -m unittest discover tests"""
+"""Seam: build_font.build(out_dir) -> font bytes. Run: uv run python -m unittest discover -s tests/code"""
 
 import io
 import sys
@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from fontTools.ttLib import TTFont  # noqa: E402
 
