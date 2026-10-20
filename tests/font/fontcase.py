@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # BANNERFONT_TTF points the suite at another font file, e.g. to check that a test
 # really fails on a deliberately broken copy. The default is the real build output.
 FONT_PATH = Path(os.environ.get("BANNERFONT_TTF") or REPO_ROOT / "build" / "Font.ttf")
-BUILD_HINT = "run `sh generate_full.sh` (or `sh generate_font.sh` if ./out is populated)"
+BUILD_HINT = "run `pnpm bannerfont build` (or `pnpm bannerfont font` if ./out is populated)"
 
 BANNER_ADVANCE = 600                      # 30 font units * 20 canvas units
 
