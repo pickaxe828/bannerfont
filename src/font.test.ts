@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { afterEach, beforeEach, describe, it } from "node:test"
 
-import { FONT_PATH, buildFont, testFont, type Runner } from "./font.ts"
+import { FONT_PATH, SVG_DIR, buildFont, testFont, type Runner } from "./font.ts"
 
 /** A runner that records its calls and answers with `code`. */
 function fakeRunner(code: number, output = "") {
@@ -20,16 +23,8 @@ describe("buildFont", () => {
     await buildFont({ run })
 
     assert.deepEqual(calls, [
-      { cmd: "uv", args: ["run", "python", "src/build_font.py", "out", FONT_PATH], show: true },
+      { cmd: "uv", args: ["run", "python", "src/build_font.py", SVG_DIR, FONT_PATH], show: true },
     ])
-  })
-
-  it("passes a custom SVG directory and destination", async () => {
-    const { run, calls } = fakeRunner(0)
-
-    await buildFont({ run, svgDir: "svgs", dest: "x/Font.ttf" })
-
-    assert.deepEqual(calls[0].args, ["run", "python", "src/build_font.py", "svgs", "x/Font.ttf"])
   })
 
   it("fails on a non-zero exit", async () => {
@@ -40,10 +35,30 @@ describe("buildFont", () => {
 })
 
 describe("testFont", () => {
+  // The font path is relative to the current directory, so each test works in its own.
+  const originalCwd = process.cwd()
+  let dir: string
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "bannerfont-font-"))
+    process.chdir(dir)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  const writeFont = () => {
+    fs.mkdirSync(path.dirname(FONT_PATH), { recursive: true })
+    fs.writeFileSync(FONT_PATH, "")
+  }
+
   it("runs only the font tests", async () => {
     const { run, calls } = fakeRunner(0, "OK")
+    writeFont()
 
-    const result = await testFont({ run, exists: () => true })
+    const result = await testFont({ run })
 
     assert.deepEqual(result, { ok: true, output: "OK" })
     assert.equal(calls.length, 1)
@@ -53,22 +68,18 @@ describe("testFont", () => {
 
   it("reports failing tests with their output instead of throwing", async () => {
     const { run } = fakeRunner(1, "FAILED (failures=1)")
+    writeFont()
 
-    const result = await testFont({ run, exists: () => true })
+    const result = await testFont({ run })
 
     assert.deepEqual(result, { ok: false, output: "FAILED (failures=1)" })
   })
 
   it("fails without running anything when build/Font.ttf is missing", async () => {
     const { run, calls } = fakeRunner(0)
-    const checked: string[] = []
 
-    await assert.rejects(
-      testFont({ run, exists: (p) => { checked.push(p); return false } }),
-      /build\/Font\.ttf/,
-    )
+    await assert.rejects(testFont({ run }), /build\/Font\.ttf/)
 
-    assert.deepEqual(checked, [FONT_PATH])
     assert.equal(calls.length, 0)
   })
 })

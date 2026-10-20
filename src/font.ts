@@ -31,21 +31,17 @@ export const run: Runner = (cmd, args, options) =>
   })
 
 export interface BuildFontOptions {
-  svgDir?: string
-  dest?: string
   run?: Runner
 }
 
-/** Compiles `svgDir/*.svg` into the font. The child's output (stderr included) is shown; a non-zero exit throws. */
-export async function buildFont(options: BuildFontOptions = {}): Promise<void> {
-  const { svgDir = SVG_DIR, dest = FONT_PATH, run: runner = run } = options
-  const { code } = await runner("uv", ["run", "python", "src/build_font.py", svgDir, dest], { show: true })
+/** Compiles `SVG_DIR/*.svg` into the font. The child's output (stderr included) is shown; a non-zero exit throws. */
+export async function buildFont({ run: runner = run }: BuildFontOptions = {}): Promise<void> {
+  const { code } = await runner("uv", ["run", "python", "src/build_font.py", SVG_DIR, FONT_PATH], { show: true })
   if (code !== 0) throw new Error(`The font build failed (exit code ${code})`)
 }
 
 export interface TestFontOptions {
   run?: Runner
-  exists?: (path: string) => boolean
 }
 
 export interface TestFontResult {
@@ -58,8 +54,8 @@ export interface TestFontResult {
  * build/Font.ttf is missing; failing tests are a result, not an exception.
  */
 export async function testFont(options: TestFontOptions = {}): Promise<TestFontResult> {
-  const { run: runner = run, exists = fs.existsSync } = options
-  if (!exists(FONT_PATH)) {
+  const { run: runner = run } = options
+  if (!fs.existsSync(FONT_PATH)) {
     throw new Error(`${FONT_PATH} is missing; run \`bannerfont build\` or \`bannerfont font\` first`)
   }
   const { code, output } = await runner("uv", ["run", "python", "-m", "unittest", "discover", "tests"])

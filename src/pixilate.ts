@@ -98,6 +98,9 @@ function traceOutline(cells: number[], offset: number): string {
   return data
 }
 
+/** Colors for the gradient patterns (13 and 14), where the default of 3 would destroy the gradient. */
+export const DETAILED_COLORS = 10
+
 export function processImage(path: string, colorNumber: number, detailedColorNumber: number) {
   // Pattern 00 is the base and is the only one with a non-zero canvas width; every
   // overlay is zero-width and shifts back by one banner so it lands on top of the base.
@@ -219,10 +222,8 @@ async function exportControlSVGs(directory: string) {
 export interface PixilateOptions {
   /** Where the SVGs go. Created when absent. */
   output: string
-  /** Colours per image, including the transparent layer. */
+  /** Colors per image, including the transparent layer. */
   colors: number
-  /** Called once per file before it is converted. */
-  onFile?: (file: string) => void
 }
 
 export interface PixilateResult {
@@ -239,14 +240,13 @@ const messageOf = (err: unknown) => (err instanceof Error ? err.message : String
  * the geometry-free glyphs (U+CFFF7, the space block, the control gaps) after their PNGs.
  */
 export async function pixilatePaths(paths: string[], options: PixilateOptions): Promise<PixilateResult> {
-  const { output, colors, onFile } = options
+  const { output, colors } = options
   fs.mkdirSync(output, { recursive: true })
   const result: PixilateResult = { written: 0, failed: [] }
 
   const convert = async (file: string) => {
-    onFile?.(file)
     try {
-      const svg = processImage(file, colors, 10)
+      const svg = processImage(file, colors, DETAILED_COLORS)
       await fs.promises.writeFile(
         Path.join(output, getName_King(Path.basename(file, Path.extname(file))) + ".svg"),
         svg,
