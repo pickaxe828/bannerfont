@@ -5,6 +5,8 @@ import quanti from "quanti"
 import Path from "path"
 import canvas, { createCanvas } from "canvas"
 
+import { getName_King } from "./naming.ts"
+
 
 // One banner is 20x40. nanoemoji derives the advance width from the viewBox aspect
 // ratio (see exportEmptySVGs), so these two numbers also set the per-glyph advance.
@@ -157,7 +159,7 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
  *
  * nanoemoji sets the advance width to
  *   max(--width, (ascender - descender) * viewBox.w / viewBox.h)
- * and generate_font.sh passes `--width 0`, so with the default 950/-250 metrics a
+ * and the font build used `--width 0`, so with the default 950/-250 metrics a
  * viewBox of `20n x 40` compiles to an advance of exactly `n * 600` units - i.e. an
  * empty canvas `n` banners wide *is* a space of `n` banners. `banners = 0` reproduces
  * the original zero-width behaviour used by the U+CFFF7 negative-space character.
@@ -172,4 +174,108 @@ export async function exportEmptySVGs(directory: string, name: string, banners: 
     directory + "/" + name + ".svg",
     svg
   )
+}
+
+// ---------------------------------------------------------------------------------------------
+// The stage: PNGs -> SVGs
+
+// Space block, per the ClongCraft PUA allocation: U+F040 + x is a space of x banners,
+// so the block runs from U+F000 (-64 banners) to U+F07F (+63 banners).
+const SPACE_ORIGIN = 0xf040
+const SPACE_FIRST = 0xf000
+const SPACE_LAST = 0xf07f
+// U+E00C is the SPACE control character, an alias for U+F041 (one banner).
+const SPACE_CONTROL_CHARACTER = 0xe00c
+
+// Control characters. A banner glyph is `ue` + colour hex + pattern *decimal*, so no
+// banner ever lands on a codepoint whose last two digits are 0a-0f or 1a-1f. The
+// ClongCraft allocation reserves those gaps for control characters; they get empty,
+// zero-width glyphs so each one maps to a real glyph instead of tofu. U+E00C is the
+// exception - exportSpaceSVGs already gives it one banner of advance.
+const CONTROL_RANGES: [number, number][] = [
+  [0xe00a, 0xe00f],
+  [0xe01a, 0xe01f],
+]
+
+// Written one at a time: paper.setup() replaces the single global paper.project, so
+// concurrent exports would race each other.
+async function exportSpaceSVGs(directory: string) {
+  for (let codepoint = SPACE_FIRST; codepoint <= SPACE_LAST; codepoint++) {
+    await exportEmptySVGs(directory, "u" + codepoint.toString(16), codepoint - SPACE_ORIGIN)
+  }
+  await exportEmptySVGs(directory, "u" + SPACE_CONTROL_CHARACTER.toString(16), 1)
+}
+
+// Same one-at-a-time rule as exportSpaceSVGs: paper.setup() is global.
+async function exportControlSVGs(directory: string) {
+  for (let [first, last] of CONTROL_RANGES) {
+    for (let codepoint = first; codepoint <= last; codepoint++) {
+      if (codepoint === SPACE_CONTROL_CHARACTER) { continue }
+      await exportEmptySVGs(directory, "u" + codepoint.toString(16), 0)
+    }
+  }
+}
+
+export interface PixilateOptions {
+  /** Where the SVGs go. Created when absent. */
+  output: string
+  /** Colours per image, including the transparent layer. */
+  colors: number
+  /** Called once per file before it is converted. */
+  onFile?: (file: string) => void
+}
+
+export interface PixilateResult {
+  /** Number of SVGs written from a PNG. */
+  written: number
+  failed: { path: string; message: string }[]
+}
+
+const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+/**
+ * Converts every PNG of the given files and directories into `<output>/<glyph>.svg`.
+ * A file that fails is recorded in `failed` and does not stop the others. Directories also get
+ * the geometry-free glyphs (U+CFFF7, the space block, the control gaps) after their PNGs.
+ */
+export async function pixilatePaths(paths: string[], options: PixilateOptions): Promise<PixilateResult> {
+  const { output, colors, onFile } = options
+  fs.mkdirSync(output, { recursive: true })
+  const result: PixilateResult = { written: 0, failed: [] }
+
+  const convert = async (file: string) => {
+    onFile?.(file)
+    try {
+      const svg = processImage(file, colors, 10)
+      await fs.promises.writeFile(
+        Path.join(output, getName_King(Path.basename(file, Path.extname(file))) + ".svg"),
+        svg,
+      )
+      result.written++
+    } catch (err) {
+      result.failed.push({ path: file, message: messageOf(err) })
+    }
+  }
+
+  for (const arg of paths) {
+    let stat: fs.Stats
+    try {
+      stat = fs.statSync(arg)
+    } catch {
+      result.failed.push({ path: arg, message: `Path or argument ${arg} not found.` })
+      continue
+    }
+    if (stat.isDirectory()) {
+      const files = fs.readdirSync(arg).filter((f) => f.toLowerCase().endsWith(".png"))
+      for (const file of files) await convert(Path.join(arg, file))
+      await exportEmptySVGs(output, "ucfff7")
+      await exportSpaceSVGs(output)
+      await exportControlSVGs(output)
+    } else if (stat.isFile()) {
+      await convert(arg)
+    } else {
+      result.failed.push({ path: arg, message: `Path or argument ${arg} is neither a file nor a directory.` })
+    }
+  }
+  return result
 }
