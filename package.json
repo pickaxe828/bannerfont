@@ -12,7 +12,8 @@
     "pixilate": "tsx src/main.ts",
     "extract": "tsx src/extract.ts",
     "typecheck": "tsc",
-    "test": "tsx --test \"src/**/*.test.ts\""
+    "test": "tsx --test \"src/**/*.test.ts\" && uv run python -m unittest discover -s tests/code -t .",
+    "test:font": "uv run python tests/font/run.py"
   },
   "keywords": [],
   "author": "",
