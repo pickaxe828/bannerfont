@@ -25,11 +25,11 @@
     "fflate": "^0.8.3",
     "jsdom": "^16.7.0",
     "paper": "^0.12.17",
-    "quanti": "^1.0.8"
+    "quanti": "^1.0.8",
+    "tsx": "^4.23.9"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "tsx": "^4.23.9",
     "typescript": "^7.0.2"
   },
   "pnpm": {
