@@ -32,4 +32,4 @@ The repository contains no Mojang assets. `pnpm extract` reads the banner textur
 
 The layer color digit `x` (`0`-`f`) and the pattern number `yy` (`00`-`42`) follow a fixed encoding that is documented in `CLAUDE.md`. The layer color order is not the Minecraft wiki order.
 
-Run `pnpm test` for the unit tests of the extract stage.
+Run `pnpm test` for the unit tests (extract stage, PNG codec and the font build on synthetic input). After a build, `pnpm test:font` checks the real `build/Font.ttf`.
