@@ -1,4 +1,4 @@
-// Builds the 688 layer PNGs (16 layer colors x 43 patterns) from the Mojang client jar.
+// Builds the 688 pattern PNGs (16 layer colors x 43 patterns) from the Mojang client jar.
 // PNGs are read and written by ./png.ts rather than node-canvas, which premultiplies alpha and
 // would distort the color of every low-alpha pixel.
 // Run it with `pnpm bannerfont extract [--mc-version <id>] [-o <dir>] [--cache <dir>]`.
@@ -229,7 +229,7 @@ export async function writeLayers(
 const DYE_NOTICE =
   "Notice: the 16 layer colors were not found as DyeColor constants in this jar, so the tints are unverified for it. Continuing with the built-in table."
 
-/** Reads the banner textures of the jar at `jar` in memory, builds the layer PNGs and returns the counts. */
+/** Reads the banner textures of the jar at `jar` in memory, builds the pattern PNGs and returns the counts. */
 export async function extractFromJar(jar: string, outDir: string): Promise<{ written: number; missing: number }> {
   const data = new Uint8Array(fs.readFileSync(jar))
   const wanted = new Set(PATTERN_TEXTURES.map((_, yy) => textureEntryName(yy)))
@@ -253,7 +253,7 @@ export interface ExtractOptions {
   cache: string
 }
 
-/** The whole stage: fetch (or reuse) the client jar of `version` and write the layer PNGs into `output`. */
+/** The whole stage: fetch (or reuse) the client jar of `version` and write the pattern PNGs into `output`. */
 export async function runExtract({ version, output, cache }: ExtractOptions): Promise<{ written: number; missing: number }> {
   const jar = await ensureJar(cache, version)
   return extractFromJar(jar, output)

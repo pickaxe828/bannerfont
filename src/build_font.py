@@ -9,7 +9,7 @@ The output is intended to be equivalent to the nanoemoji build, so the conventio
 below are copied from it rather than invented:
 
   advance   nanoemoji's `_advance_width` is max(--width, (asc - desc) * vb.w / vb.h).
-            generate_font.sh passed `--width 0`, so with 950/-250 metrics and a
+            The old generate_font.sh passed `--width 0`, so with 950/-250 metrics and a
             height-40 canvas that is exactly 30 * viewBox.w -- one banner (vb.w=20)
             is 600 units. See CLAUDE.md.
   transform nanoemoji applied `--transform "translate(-20, 0)"` in *font* units,

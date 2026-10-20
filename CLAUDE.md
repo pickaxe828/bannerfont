@@ -41,7 +41,7 @@ TypeScript runs through **tsx** (`pnpm bannerfont` → `tsx src/cli.ts`); nothin
 
 **`canvas` is a native module and pnpm 10 blocks postinstall scripts by default.** `package.json` declares `pnpm.onlyBuiltDependencies: ["canvas", "esbuild"]` to permit it. If `pnpm install` ever prints `Ignored build scripts: canvas`, the binary is missing and *every* entry point dies with a confusing `ERR_INTERNAL_ASSERTION` from Node's CJS loader rather than a sensible "module not found" — pnpm won't re-run scripts for already-installed packages, so fix an existing tree with `pnpm rebuild canvas`. Since canvas 3 this installs a **prebuilt** binary (v2 used node-pre-gyp and compiled from source, needing Homebrew cairo/pango/pixman).
 
-**`jsdom` is a hard runtime requirement of `paper` that `paper` does not declare.** `paper`'s Node shim (`dist/node/self.js`) does `try { require('jsdom') } catch {}` and, when the module is absent, **silently** falls back to a stub `self` with no `document`. Every `exportSVG()` then dies with `TypeError: Cannot read properties of undefined (reading 'createElementNS')` — and because `processDirectory` collects tasks with `Promise.allSettled`, that failure is swallowed and the run reports success with an empty `./out`. `jsdom` is therefore an explicit dependency in `package.json`; do not remove it because "nothing imports it".
+**`jsdom` is a hard runtime requirement of `paper` that `paper` does not declare.** `paper`'s Node shim (`dist/node/self.js`) does `try { require('jsdom') } catch {}` and, when the module is absent, **silently** falls back to a stub `self` with no `document`. Every `exportSVG()` then dies with `TypeError: Cannot read properties of undefined (reading 'createElementNS')`. `pixilatePaths` records that failure per file instead of aborting, so `bannerfont pixilate` and `bannerfont build` list every failed file and exit non-zero; an empty `./out` is no longer reported as success. `jsdom` is still an explicit dependency in `package.json`; do not remove it because "nothing imports it".
 
 `tsconfig.json` must keep `"types": ["node"]`. TypeScript 7 does not auto-discover `@types/node` through pnpm's symlinked layout, and without it every `fs`/`path` import fails with `TS2591` plus cascading implicit-`any` errors.
 
@@ -166,7 +166,7 @@ The built font has **829** `cmap` entries: 688 banners, the 128 space glyphs, U+
 
 ### Per-pattern exceptions
 
-- Patterns `13` (`gra`, gradient) and `14` (`gru`, gradient up) quantize to `detailedColorNumber` (hardcoded `10` at the `processImage` call site) instead of the default 3 — 3 colours destroys a gradient.
+- Patterns `13` (`gra`, gradient) and `14` (`gru`, gradient up) quantize to `detailedColorNumber` (the `DETAILED_COLORS` constant, `10`, in `src/pixilate.ts`) instead of the default 3 — 3 colors destroys a gradient.
 - Pattern `00` is the base and is the only one that gets a non-zero canvas width (see above).
 
 Both exceptions key off `currentCode`, the `yy` slice of the filename — filename format is load-bearing logic, not just bookkeeping.
