@@ -1,13 +1,11 @@
 // Builds the 688 layer PNGs (16 layer colors x 43 patterns) from the Mojang client jar.
 // PNGs are read and written by ./png.ts rather than node-canvas, which premultiplies alpha and
 // would distort the color of every low-alpha pixel.
-// Usage: pnpm extract [--mc-version <id>] [-o <dir>] [--cache <dir>]
+// Run it with `pnpm bannerfont extract [--mc-version <id>] [-o <dir>] [--cache <dir>]`.
 import crypto from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 
-import Arg from "arg"
 import { unzipSync } from "fflate"
 
 import { decodePng, encodePng } from "./png.ts"
@@ -243,26 +241,20 @@ export async function extractFromJar(jar: string, outDir: string): Promise<{ wri
   return result
 }
 
-async function main(): Promise<void> {
-  const args = Arg({
-    "--mc-version": String,
-    "--output": String,
-    "--cache": String,
-    "-o": "--output",
-  })
-  const version = args["--mc-version"] ?? "1.21.2"
-  const outDir = args["--output"] ?? "./images"
-  const cacheDir = args["--cache"] ?? "./.cache"
+export const DEFAULT_MC_VERSION = "1.21.2"
+export const DEFAULT_IMAGES_DIR = "./images"
+export const DEFAULT_CACHE_DIR = "./.cache"
 
-  const jar = await ensureJar(cacheDir, version)
-  const { written, missing } = await extractFromJar(jar, outDir)
-  console.log(`${written} PNGs written, ${missing} patterns missing`)
+export interface ExtractOptions {
+  version: string
+  /** Where the PNGs go. */
+  output: string
+  /** Where client jars are cached. */
+  cache: string
 }
 
-// Only run as a script, so the tests can import the pure functions
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((err) => {
-    console.error(err instanceof Error ? err.message : err)
-    process.exit(1)
-  })
+/** The whole stage: fetch (or reuse) the client jar of `version` and write the layer PNGs into `output`. */
+export async function runExtract({ version, output, cache }: ExtractOptions): Promise<{ written: number; missing: number }> {
+  const jar = await ensureJar(cache, version)
+  return extractFromJar(jar, output)
 }
