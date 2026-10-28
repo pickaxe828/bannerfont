@@ -140,11 +140,30 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
     }
   }
 
+  // Seams: two shapes that meet on an edge are anti-aliased separately, so each one
+  // lets the background bleed through along that edge. Fix it by growing every layer
+  // one cell *under* the later, opaque layers it touches. Later layers paint over the
+  // growth, so no opaque pixel changes colour and the outer edge stays exact.
+  const owner = new Map<number, number>()
+  const order = [...layers.keys()]
+  order.forEach((colour, index) => { for (const cell of layers.get(colour)!) { owner.set(cell, index) } })
+  const grown = new Map<number, number[]>()
+  order.forEach((colour, index) => {
+    const extra = new Set<number>()
+    for (const cell of layers.get(colour)!) {
+      for (const near of [cell - 1, cell + 1, cell - VERTEX_STRIDE, cell + VERTEX_STRIDE]) {
+        const other = owner.get(near)
+        if (other !== undefined && other > index && (order[other] & 0xff) === 255) { extra.add(near) }
+      }
+    }
+    grown.set(colour, extra.size === 0 ? layers.get(colour)! : layers.get(colour)!.concat([...extra]))
+  })
+
   // Trace each colour's pixels into one path, and emit the SVG directly. Paper.js is
   // not involved: it only ever saw axis-aligned unit squares on an integer grid, which
   // traceOutline unions exactly and far more cheaply than a boolean op can.
   let groups = ""
-  for (let [colour, cells] of layers) {
+  for (let [colour, cells] of grown) {
     let hex = ((colour >>> 8) & 0xffffff).toString(16).padStart(6, "0")
     let alpha = colour & 0xff
     // Paper.js wrote fill-opacity to 5 decimals; match it so the COLR alphas are

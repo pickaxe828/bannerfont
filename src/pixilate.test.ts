@@ -53,6 +53,49 @@ describe("gradient colors", () => {
   })
 })
 
+/** A 20x40 PNG with a red block (columns 5-9) next to a blue block (columns 10-14), blue at the given alpha. */
+function neighbourPng(blueAlpha: number): Uint8Array {
+  const pixels = new Uint8Array(20 * 40 * 4)
+  for (let y = 5; y < 15; y++) {
+    for (let x = 5; x < 10; x++) pixels.set([255, 0, 0, 255], (y * 20 + x) * 4)
+    for (let x = 10; x < 15; x++) pixels.set([0, 0, 255, blueAlpha], (y * 20 + x) * 4)
+  }
+  return encodePng(pixels, 20, 40)
+}
+
+/** Horizontal extent [min, max] of the path of the group with the given fill. */
+function extentOf(file: string, fill: string): [number, number] {
+  const svg = fs.readFileSync(file, "utf8")
+  const d = svg.match(new RegExp(`fill="${fill}"[^>]*><path d="([^"]*)"`))![1]
+  let x = 0
+  const xs: number[] = []
+  for (const [, command, value] of d.matchAll(/([MhvLz])(-?[\d.]*)(?:,-?[\d.]*)?/g)) {
+    if (command === "M") { x = Number(value); xs.push(x) } else if (command === "h") { x += Number(value); xs.push(x) }
+  }
+  return [Math.min(...xs), Math.max(...xs)]
+}
+
+describe("seam overlap", () => {
+  const build = async (blueAlpha: number) => {
+    const { images, out } = workspace()
+    fs.writeFileSync(path.join(images, "000.png"), neighbourPng(blueAlpha))
+    const result = await pixilatePaths([images], { output: out, colors: 3 })
+    assert.deepEqual(result.failed, [])
+    return path.join(out, "ue000.svg")
+  }
+
+  it("grows an earlier layer one cell under a later opaque layer", async () => {
+    const file = await build(255)
+    assert.deepEqual(extentOf(file, "#ff0000"), [5, 11])
+    assert.deepEqual(extentOf(file, "#0000ff"), [10, 15])
+  })
+
+  it("does not grow under a translucent layer, which would show double alpha", async () => {
+    const file = await build(128)
+    assert.deepEqual(extentOf(file, "#ff0000"), [5, 10])
+  })
+})
+
 describe("pixilatePaths", () => {
   it("writes one SVG per PNG of a directory, plus the geometry-free glyphs", async () => {
     const { images, out } = workspace()
