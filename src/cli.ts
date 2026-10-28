@@ -8,7 +8,18 @@ import { defineCommand, runMain, type ArgsDef, type ParsedArgs } from "citty"
 
 import { DEFAULT_CACHE_DIR, DEFAULT_IMAGES_DIR, DEFAULT_MC_VERSION, runExtract } from "./extract.ts"
 import { FONT_PATH, SVG_DIR, buildFont, testFont } from "./font.ts"
-import { DEFAULT_COLORS, parseColors, resolveValue, unknownFlags } from "./options.ts"
+import {
+  DEFAULT_COLORS,
+  DEFAULT_QUALITY,
+  QUALITIES,
+  QUALITY_PRESETS,
+  pixilateSettings,
+  parseColors,
+  parseQuality,
+  resolveValue,
+  unknownFlags,
+  type Quality,
+} from "./options.ts"
 import { pixilatePaths } from "./pixilate.ts"
 import { prune } from "./prune.ts"
 
@@ -78,9 +89,41 @@ const cacheArg = {
   cache: stringArg("Folder for downloaded client jars", { default: DEFAULT_CACHE_DIR }),
 }
 const colorsArg = {
-  colors: stringArg(`Colors per image, including the transparent layer (default ${DEFAULT_COLORS})`, {
+  quality: stringArg(`Preset for colors per image and for gradients: ${QUALITIES.join(" or ")} (default ${DEFAULT_QUALITY})`, {
+    alias: "q",
+  }),
+  colors: stringArg(`Colors per image, including the transparent layer (default ${DEFAULT_COLORS}); replaces the preset's colors`, {
     alias: ["c", "colours"],
   }),
+}
+
+const askQuality = async (initial: Quality) =>
+  unlessCancelled(
+    await select({
+      message: "Quality",
+      initialValue: initial,
+      options: QUALITIES.map((value) => ({
+        value,
+        label: value,
+        hint: `${QUALITY_PRESETS[value].colors} colors, ${QUALITY_PRESETS[value].gradientColors} for gradients`,
+      })),
+    }),
+  )
+
+/**
+ * The colors for the tracing. Both flags are checked before any prompt. A `--quality` flag wins and never
+ * prompts; `-c` alone also skips the prompt, because it already says what the user wants.
+ */
+async function pixilateOptions(args: { quality?: string; colors?: string }) {
+  const flag = parseQuality(args.quality)
+  if (args.colors !== undefined) parseColors(args.colors)
+  const quality = await resolveValue({
+    flag: flag ?? (args.colors !== undefined ? DEFAULT_QUALITY : undefined),
+    interactive: interactive(),
+    ask: askQuality,
+    fallback: DEFAULT_QUALITY,
+  })
+  return pixilateSettings(quality, args.colors)
 }
 
 async function extractStage(options: { version: string; output: string; cache: string }) {
@@ -91,9 +134,9 @@ async function extractStage(options: { version: string; output: string; cache: s
   else log.success(summary)
 }
 
-async function pixilateStage(paths: string[], output: string, colors: number) {
+async function pixilateStage(paths: string[], output: string, settings: { colors: number; gradientColors: number }) {
   log.step(`Tracing ${paths.join(", ")} into SVGs in ${output}`)
-  const { written, failed } = await pixilatePaths(paths, { output, colors })
+  const { written, failed } = await pixilatePaths(paths, { output, ...settings })
   if (failed.length > 0) {
     for (const { path, message } of failed) log.error(`${path}: ${message}`)
     throw new Error(`${failed.length} file(s) failed to pixilate (${written} written)`)
@@ -146,8 +189,8 @@ const pixilateCommand = stage({
     ...colorsArg,
   },
   run: async (args) => {
-    const colors = parseColors(args.colors)
-    await pixilateStage(await pixilateInputs(args._.map(String)), args.output, colors)
+    const settings = await pixilateOptions(args)
+    await pixilateStage(await pixilateInputs(args._.map(String)), args.output, settings)
   },
 })
 
@@ -177,10 +220,10 @@ const buildCommand = stage({
   description: "Full build: extract, pixilate, font, then the font tests",
   args: { ...mcVersionArg, ...cacheArg, ...colorsArg },
   run: async (args) => {
-    const colors = parseColors(args.colors)
+    const settings = await pixilateOptions(args)
     const version = await mcVersion(args["mc-version"])
     await extractStage({ version, output: DEFAULT_IMAGES_DIR, cache: args.cache })
-    await pixilateStage([DEFAULT_IMAGES_DIR], SVG_DIR, colors)
+    await pixilateStage([DEFAULT_IMAGES_DIR], SVG_DIR, settings)
     await fontStage()
     // The font stays on disk when the tests fail, but the build still fails
     await testStage()

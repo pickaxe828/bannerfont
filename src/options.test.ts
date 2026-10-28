@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { parseColors, resolveValue, unknownFlags } from "./options.ts"
+import { QUALITY_PRESETS, parseColors, parseQuality, pixilateSettings, resolveValue, unknownFlags } from "./options.ts"
 
 describe("resolveValue", () => {
   it("a flag wins and never prompts", async () => {
@@ -58,6 +58,43 @@ describe("parseColors", () => {
     for (const bad of ["abc", "0", "-2", "2.5", 0]) {
       assert.throws(() => parseColors(bad), /--colors/)
     }
+  })
+})
+
+describe("parseQuality", () => {
+  it("returns undefined without a flag", () => {
+    assert.equal(parseQuality(undefined), undefined)
+  })
+
+  it("accepts every preset name", () => {
+    assert.equal(parseQuality("standard"), "standard")
+    assert.equal(parseQuality("high"), "high")
+  })
+
+  it("rejects anything else", () => {
+    for (const bad of ["", "ultra", "High"]) {
+      assert.throws(() => parseQuality(bad), /--quality/)
+    }
+  })
+})
+
+describe("pixilateSettings", () => {
+  it("standard keeps the original 3 colors and 10 gradient colors", () => {
+    assert.deepEqual(pixilateSettings("standard"), { colors: 3, gradientColors: 10 })
+  })
+
+  it("high keeps more colors than standard", () => {
+    const high = pixilateSettings("high")
+    assert.ok(high.colors > QUALITY_PRESETS.standard.colors)
+    assert.ok(high.gradientColors > QUALITY_PRESETS.standard.gradientColors)
+  })
+
+  it("an explicit colors value replaces the colors but not the gradient colors", () => {
+    assert.deepEqual(pixilateSettings("high", "5"), { colors: 5, gradientColors: QUALITY_PRESETS.high.gradientColors })
+  })
+
+  it("rejects an invalid colors value", () => {
+    assert.throws(() => pixilateSettings("high", "0"), /--colors/)
   })
 })
 

@@ -5,7 +5,8 @@ import path from "node:path"
 import { describe, it } from "node:test"
 
 import { encodePng } from "./png.ts"
-import { pixilatePaths } from "./pixilate.ts"
+import { QUALITY_PRESETS } from "./options.ts"
+import { DETAILED_COLORS, pixilatePaths } from "./pixilate.ts"
 
 /** A 20x40 PNG with a red square on a transparent ground. */
 function bannerPng(): Uint8Array {
@@ -23,6 +24,34 @@ function workspace() {
   fs.mkdirSync(images)
   return { root, images, out }
 }
+
+/** A 20x40 PNG whose 20 columns are 20 distinct grays. */
+function gradientPng(): Uint8Array {
+  const pixels = new Uint8Array(20 * 40 * 4)
+  for (let y = 0; y < 40; y++) {
+    for (let x = 0; x < 20; x++) pixels.set([x * 12, x * 12, x * 12, 255], (y * 20 + x) * 4)
+  }
+  return encodePng(pixels, 20, 40)
+}
+
+const layersOf = (file: string) => (fs.readFileSync(file, "utf8").match(/<g /g) ?? []).length
+
+describe("gradient colors", () => {
+  it("standard preset matches DETAILED_COLORS", () => {
+    assert.equal(QUALITY_PRESETS.standard.gradientColors, DETAILED_COLORS)
+  })
+
+  it("only the gradient patterns (13 and 14) use gradientColors; the others use colors", async () => {
+    const { images, out } = workspace()
+    fs.writeFileSync(path.join(images, "013.png"), gradientPng())
+    fs.writeFileSync(path.join(images, "015.png"), gradientPng())
+
+    const result = await pixilatePaths([images], { output: out, colors: 2, gradientColors: 8 })
+
+    assert.deepEqual(result.failed, [])
+    assert.ok(layersOf(path.join(out, "ue013.svg")) > layersOf(path.join(out, "ue015.svg")))
+  })
+})
 
 describe("pixilatePaths", () => {
   it("writes one SVG per PNG of a directory, plus the geometry-free glyphs", async () => {

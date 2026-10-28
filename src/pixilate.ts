@@ -224,6 +224,8 @@ export interface PixilateOptions {
   output: string
   /** Colors per image, including the transparent layer. */
   colors: number
+  /** Colors for the gradient patterns (13 and 14). Defaults to `DETAILED_COLORS`. */
+  gradientColors?: number
 }
 
 export interface PixilateResult {
@@ -240,13 +242,13 @@ const messageOf = (err: unknown) => (err instanceof Error ? err.message : String
  * the geometry-free glyphs (U+CFFF7, the space block, the control gaps) after their PNGs.
  */
 export async function pixilatePaths(paths: string[], options: PixilateOptions): Promise<PixilateResult> {
-  const { output, colors } = options
+  const { output, colors, gradientColors = DETAILED_COLORS } = options
   fs.mkdirSync(output, { recursive: true })
   const result: PixilateResult = { written: 0, failed: [] }
 
   const convert = async (file: string) => {
     try {
-      const svg = processImage(file, colors, DETAILED_COLORS)
+      const svg = processImage(file, colors, gradientColors)
       await fs.promises.writeFile(
         Path.join(output, getName_King(Path.basename(file, Path.extname(file))) + ".svg"),
         svg,

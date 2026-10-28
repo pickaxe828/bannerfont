@@ -15,7 +15,8 @@ pnpm install                                    # Node deps
 uv sync                                         # Python deps (fontTools); `uv run` also does this on demand
 
 pnpm bannerfont build        # full build: jar -> PNGs -> SVGs -> build/Font.ttf, then the font tests
-pnpm bannerfont build --mc-version 1.20.4   # flags of build: --mc-version, --cache, -c/--colors
+pnpm bannerfont build --mc-version 1.20.4   # flags of build: --mc-version, --cache, -q/--quality, -c/--colors
+pnpm bannerfont build --quality high        # presets: standard (default) or high
 pnpm bannerfont extract      # stage 0 only: Mojang client jar -> 688 PNGs in ./images
 pnpm bannerfont pixilate images/   # stage 1 only: raster -> vector SVGs into ./out
 pnpm bannerfont font         # stage 2 only: ./out/*.svg -> build/Font.ttf (assumes ./out is populated)
@@ -32,10 +33,11 @@ uv run python -m unittest discover -s tests/font -t .   # same tests, plain unit
 
 `bannerfont` is also the `bin` of the package (`bin/bannerfont.mjs`, which registers tsx and loads `src/cli.ts`). All paths are relative to the current directory, so run it from the repo root.
 
-**The CLI** is `src/cli.ts`: citty parses arguments, `@clack/prompts` draws the UI. The stages are plain functions that the CLI calls and that never run on import: `runExtract` in `src/extract.ts`, `pixilatePaths` in `src/pixilate.ts`, `buildFont`/`testFont` in `src/font.ts`, `prune` in `src/prune.ts`. The flag/prompt/default rule is `resolveValue` in `src/options.ts`: **a flag always wins and never prompts; without a flag a TTY gets a prompt and anything else gets the default.** Only `--mc-version` (extract, build) and the pixilate paths are prompted for.
+**The CLI** is `src/cli.ts`: citty parses arguments, `@clack/prompts` draws the UI. The stages are plain functions that the CLI calls and that never run on import: `runExtract` in `src/extract.ts`, `pixilatePaths` in `src/pixilate.ts`, `buildFont`/`testFont` in `src/font.ts`, `prune` in `src/prune.ts`. The flag/prompt/default rule is `resolveValue` in `src/options.ts`: **a flag always wins and never prompts; without a flag a TTY gets a prompt and anything else gets the default.** Only `--mc-version` (extract, build), the pixilate paths and `--quality` (pixilate, build) are prompted for.
 
 - `extract` flags: `--mc-version <id>` (default `1.21.2`), `-o/--output` (default `./images`), `--cache` (default `./.cache`). `fflate` is a runtime dependency of it, for reading the zip.
-- `pixilate` flags: `-o/--output` (default `./out`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args; with none, the default is `./images`. In a directory only `*.png` files are converted.
+- `pixilate` flags: `-o/--output` (default `./out`), `-q/--quality standard|high` (default `standard`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args; with none, the default is `./images`. In a directory only `*.png` files are converted.
+- **Quality presets** (`QUALITY_PRESETS` in `src/options.ts`): `standard` is 3 colors and 10 for the gradient patterns 13/14 (the original output, byte-identical); `high` is 128 and 600, which is **lossless**: the textures have at most 80 opaque colors (525 in 13/14), so every pixel is kept exactly (587 KB against 69 KB, build ~14 s against ~2.4 s; the budget is 10 MB). Raising the numbers further changes nothing. Measured in between: 32/128 is 542 KB and 64/256 is 617 KB with visible loss, so lossless is both the best and nearly the smallest. `--quality` always wins and never prompts; without it a TTY gets a select, unless `-c` is given. `-c` replaces only the preset's base colors, not its gradient colors. `standard.gradientColors` must equal `DETAILED_COLORS` in `src/pixilate.ts` (a test checks it). A preset changes the SVG detail only, never the encoding.
 - `font` runs `uv run python src/build_font.py out build/Font.ttf`. Its output, stderr included, is shown, and a non-zero exit fails the command.
 - `test` runs only the real-font suite, `uv run python tests/font/run.py` (the JSON-lines runner, which sets `REQUIRE_REAL_FONT=1`), and shows one line per test result; it fails if `build/Font.ttf` is missing or any test fails. `build` keeps `build/Font.ttf` and exits non-zero if those tests fail. Code tests stay on `pnpm test`.
 

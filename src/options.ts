@@ -32,6 +32,39 @@ export function parseColors(value: string | number | undefined): number {
   return n
 }
 
+/**
+ * Quality presets: how many colors the tracing keeps per image and for the gradient patterns
+ * (13 and 14). More colors give a closer picture and a bigger font. `standard` is the original
+ * behavior; `gradientColors` must stay equal to `DETAILED_COLORS` in pixilate.ts for it.
+ */
+export const QUALITY_PRESETS = {
+  standard: { colors: DEFAULT_COLORS, gradientColors: 10 },
+  // Lossless: the textures have at most 80 opaque colors (525 in the gradients), so these keep every
+  // pixel exactly. More colors would give the same font (587 KB), only slower to build.
+  high: { colors: 128, gradientColors: 600 },
+} as const
+
+export type Quality = keyof typeof QUALITY_PRESETS
+
+export const QUALITIES = Object.keys(QUALITY_PRESETS) as Quality[]
+
+export const DEFAULT_QUALITY: Quality = "standard"
+
+/** Parses `-q/--quality`. Returns undefined when the flag is absent; anything but a preset name is an error. */
+export function parseQuality(value: string | undefined): Quality | undefined {
+  if (value === undefined) return undefined
+  if (!(QUALITIES as string[]).includes(value)) {
+    throw new Error(`--quality must be one of ${QUALITIES.join(", ")}, got "${value}"`)
+  }
+  return value as Quality
+}
+
+/** The colors for a preset. An explicit `-c/--colors` replaces the preset's colors but not its gradient colors. */
+export function pixilateSettings(quality: Quality, colors?: string | number) {
+  const preset = QUALITY_PRESETS[quality]
+  return { colors: colors === undefined ? preset.colors : parseColors(colors), gradientColors: preset.gradientColors }
+}
+
 /** The flags citty accepts for a command, as declared in its `args`. */
 export type DeclaredFlags = Record<string, { type?: string; alias?: string | string[] }>
 
