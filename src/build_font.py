@@ -80,7 +80,17 @@ FULL_NAME = f"{FAMILY} {STYLE}"
 PS_NAME = f"{FAMILY}-{STYLE}"
 VERSION = 1.0
 VENDOR_ID = "BNFT"                                  # OS/2 achVendID, exactly 4 chars
-COPYRIGHT = "Copyright (c) 2023 Pickaxe828. MIT License."
+COPYRIGHT = ("Copyright (c) 2023 Pickaxe828. Code: MIT License. Glyphs are derived from "
+             "Minecraft textures, copyright Mojang Studios and Microsoft Corporation.")
+# nameID 13. The MIT License covers the code only; the textures and every derivative of
+# them (this font) stay with Mojang Studios and Microsoft Corporation. tests/vendor_identity.py
+# lists the phrases that the built font must keep.
+LICENSE_DESCRIPTION = (
+    "The glyphs in this font are derived from official Minecraft textures. The textures "
+    "and all derivatives of them, including this font, remain the property of Mojang "
+    "Studios and Microsoft Corporation. The MIT License applies to the source code only. "
+    "This is a non-commercial derivative work and is not endorsed by, associated with, "
+    "or approved by Mojang or Microsoft.")
 VENDOR_URL = "https://github.com/pickaxe828/bannerfont"
 
 FS_SELECTION_REGULAR = 1 << 6                       # OS/2 fsSelection bit 6
@@ -285,6 +295,7 @@ def build(out_dir: Path) -> bytes:
         "version": f"Version {VERSION:.3f}",           # 5
         "psName": PS_NAME,                             # 6
         "vendorURL": VENDOR_URL,                       # 11
+        "licenseDescription": LICENSE_DESCRIPTION,     # 13
     })
     fb.font["head"].fontRevision = VERSION             # must match nameID 5
     fb.setupOS2(sTypoAscender=ASCENDER, sTypoDescender=DESCENDER,

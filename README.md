@@ -41,3 +41,10 @@ The repository contains no Mojang assets. `pnpm bannerfont extract` reads the ba
 The layer color digit `x` (`0`-`f`) and the pattern number `yy` (`00`-`42`) follow a fixed encoding that is documented in `CLAUDE.md`. The layer color order is not the Minecraft wiki order.
 
 Run `pnpm test` for the unit tests (extract stage, PNG codec, CLI wiring and the font build on synthetic input). The real-font tests are `pnpm bannerfont test`, which checks `build/Font.ttf` and is also the last step of `pnpm bannerfont build`.
+
+## Disclaimer
+The source code of this project is released under the MIT License (see `LICENSE`).
+
+The banner glyphs in the generated font files, including `build/Font.ttf`, are derived from official Minecraft textures. This repository does not contain these textures. `pnpm bannerfont extract` reads them from the client jar that Mojang publishes.
+
+The textures and all derivatives of them, including the generated fonts, remain the property of Mojang Studios and Microsoft Corporation. The MIT License does not apply to them. This project is a non-commercial derivative work. Mojang and Microsoft do not endorse, approve, or have any association with this project.
