@@ -90,9 +90,27 @@ describe("seam overlap", () => {
     assert.deepEqual(extentOf(file, "#0000ff"), [10, 15])
   })
 
-  it("does not grow under a translucent layer, which would show double alpha", async () => {
+  it("splits a translucent image into opaque colour layers and nested alpha masks", async () => {
+    const svg = fs.readFileSync(await build(128), "utf8")
+    const groups = [...svg.matchAll(/<g ([^>]*)>/g)].map((match) => match[1])
+    const masks = groups.filter((attributes) => attributes.includes('data-mask="1"'))
+    const colours = groups.filter((attributes) => !attributes.includes("data-mask"))
+    assert.equal(colours.length, 2)
+    assert.ok(colours.every((attributes) => !attributes.includes("fill-opacity")))
+    // Levels 128 and 255, so the increments are 128/255 and then 1 (no attribute).
+    assert.equal(masks.length, 2)
+    assert.ok(masks[0].includes('fill-opacity="0.50196"'))
+    assert.ok(!masks[1].includes("fill-opacity"))
+  })
+
+  it("grows the colour layers into the transparent cells around them, which the mask hides", async () => {
     const file = await build(128)
-    assert.deepEqual(extentOf(file, "#ff0000"), [5, 10])
+    assert.deepEqual(extentOf(file, "#ff0000"), [4, 11])
+    assert.deepEqual(extentOf(file, "#0000ff"), [10, 16])
+  })
+
+  it("writes no mask for an image without translucent pixels", async () => {
+    assert.ok(!fs.readFileSync(await build(255), "utf8").includes("data-mask"))
   })
 })
 

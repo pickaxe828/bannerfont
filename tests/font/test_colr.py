@@ -8,16 +8,21 @@ from tests.font_spec import BANNER_CODEPOINTS, COLORS, PATTERNS, banner_cp
 
 PAINT_COLR_LAYERS = 1
 PAINT_GLYPH = 10
+PAINT_COMPOSITE = 32
 
 
 def shape_glyphs(colr, paint):
-    """Names of every glyph a paint tree fills, following PaintColrLayers slices."""
+    """Names of every glyph a paint tree fills, following PaintColrLayers slices and PaintComposite."""
     if paint.Format == PAINT_COLR_LAYERS:
         first = paint.FirstLayerIndex
         for layer in colr.LayerList.Paint[first:first + paint.NumLayers]:
             yield from shape_glyphs(colr, layer)
     elif paint.Format == PAINT_GLYPH:
         yield paint.Glyph
+    elif paint.Format == PAINT_COMPOSITE:
+        # Translucent banners: opaque colour layers (backdrop) through alpha masks (source).
+        yield from shape_glyphs(colr, paint.BackdropPaint)
+        yield from shape_glyphs(colr, paint.SourcePaint)
     else:
         raise AssertionError(f"unexpected paint format {paint.Format}")
 

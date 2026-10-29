@@ -125,18 +125,32 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
   const palette = quanti(imageData.data, (currentCode === "13" || currentCode === "14") ? detailedColorNumber : colorNumber, 4) // 4 = RGBA
   palette.process(imageData.data)
 
-  // Bucket the opaque pixels by colour. Insertion order is scan order, which is the
+  // Bucket the visible pixels by colour. Insertion order is scan order, which is the
   // order the layers are painted in - build_font.py turns each one into a COLR layer.
-  let layers = new Map<number, number[]>()
+  //
+  // An image with translucent pixels is split instead: the colour layers are all
+  // opaque (keyed by RGB alone) and the alpha goes into separate mask layers, which
+  // build_font.py composites over them. Translucent shapes cannot overlap without
+  // showing double alpha, so they cannot be made seam-free; opaque ones can.
   let pixels = imageData.data
+  let translucent = false
+  for (let i = 3; i < pixels.length; i += 4) { if (pixels[i] > 0 && pixels[i] < 255) { translucent = true; break } }
+
+  let layers = new Map<number, number[]>()
+  let alphas = new Map<number, number[]>()
   for (let y = 0; y < image.height; y++) {
     for (let x = 0; x < image.width; x++) {
       let i = (y * image.width + x) * 4
       // Skip transparent pixels
       if (pixels[i + 3] === 0) { continue }
-      let colour = (pixels[i] << 24) | (pixels[i + 1] << 16) | (pixels[i + 2] << 8) | pixels[i + 3]
+      let alpha = translucent ? 255 : pixels[i + 3]
+      let colour = (pixels[i] << 24) | (pixels[i + 1] << 16) | (pixels[i + 2] << 8) | alpha
       let cells = layers.get(colour)
       if (cells === undefined) { layers.set(colour, [vertex(x, y)]) } else { cells.push(vertex(x, y)) }
+      if (translucent) {
+        let level = alphas.get(pixels[i + 3])
+        if (level === undefined) { alphas.set(pixels[i + 3], [vertex(x, y)]) } else { level.push(vertex(x, y)) }
+      }
     }
   }
 
@@ -144,6 +158,11 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
   // lets the background bleed through along that edge. Fix it by growing every layer
   // one cell *under* the later, opaque layers it touches. Later layers paint over the
   // growth, so no opaque pixel changes colour and the outer edge stays exact.
+  const inside = (cell: number) => {
+    const x = (cell % VERTEX_STRIDE) - 1
+    const y = Math.floor(cell / VERTEX_STRIDE) - 1
+    return x >= 0 && x < image.width && y >= 0 && y < image.height
+  }
   const owner = new Map<number, number>()
   const order = [...layers.keys()]
   order.forEach((colour, index) => { for (const cell of layers.get(colour)!) { owner.set(cell, index) } })
@@ -154,6 +173,9 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
       for (const near of [cell - 1, cell + 1, cell - VERTEX_STRIDE, cell + VERTEX_STRIDE]) {
         const other = owner.get(near)
         if (other !== undefined && other > index && (order[other] & 0xff) === 255) { extra.add(near) }
+        // The mask has its own anti-aliased edge, so the colour must fully cover it:
+        // grow into the transparent cells around the shape, which the mask hides.
+        if (translucent && other === undefined && inside(near)) { extra.add(near) }
       }
     }
     grown.set(colour, extra.size === 0 ? layers.get(colour)! : layers.get(colour)!.concat([...extra]))
@@ -170,6 +192,22 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
     // bit-identical to the fonts built before this change.
     let opacity = alpha === 255 ? "" : ` fill-opacity="${Math.round((alpha / 255) * 1e5) / 1e5}"`
     groups += `<g fill="#${hex}"${opacity} fill-rule="nonzero"><path d="${traceOutline(cells, offset)}"/></g>`
+  }
+
+  // Mask layers: level k covers every cell with alpha >= a_k, so the levels are nested
+  // and share no edge that could leave a seam. Each is painted with the increment that
+  // takes the running alpha from a_(k-1) to a_k.
+  let previous = 0
+  let covered: number[] = []
+  const levels = [...alphas.keys()].sort((a, b) => b - a)
+  const nested = new Map<number, number[]>()
+  for (const level of levels) { covered = covered.concat(alphas.get(level)!); nested.set(level, covered) }
+  for (const level of [...alphas.keys()].sort((a, b) => a - b)) {
+    const target = level / 255
+    const step = 1 - (1 - target) / (1 - previous)
+    previous = target
+    const opacity = step >= 1 ? "" : ` fill-opacity="${Math.round(step * 1e5) / 1e5}"`
+    groups += `<g data-mask="1" fill="#000000"${opacity} fill-rule="nonzero"><path d="${traceOutline(nested.get(level)!, offset)}"/></g>`
   }
 
   return `<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"` +

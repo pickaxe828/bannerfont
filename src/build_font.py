@@ -141,7 +141,9 @@ def codepoint_of(stem: str) -> int:
 
 
 def read_svg(path: Path):
-    """Return (viewBox_width, [(fill, opacity, path_d), ...]) for a paper.js export."""
+    """Return (viewBox_width, [(fill, opacity, path_d, is_mask), ...]) for an SVG of stage 1.
+
+    A group with data-mask="1" is an alpha mask layer, see the COLR assembly in build()."""
     root = ET.parse(path).getroot()
     vb = root.get("viewBox")
     width = float(vb.split(",")[2]) if vb else 0.0
@@ -157,7 +159,7 @@ def read_svg(path: Path):
         for node in group.iter(f"{SVG_NS}path"):
             d = node.get("d")
             if d:
-                layers.append((fill, opacity, d))
+                layers.append((fill, opacity, d, group.get("data-mask") == "1"))
     return width, layers
 
 
@@ -217,7 +219,8 @@ def build(out_dir: Path) -> bytes:
         # One SVG group becomes one COLR layer. `bounds` tracks the ink of them all.
         bounds = BoundsPen(None)
         layer_list = []
-        for fill, opacity, d in layers:
+        mask_list = []
+        for fill, opacity, d, is_mask in layers:
             # Replay the SVG path through the transform, into font units.
             record = RecordingPen()
             parse_path(d, TransformPen(record, xform))
@@ -245,7 +248,7 @@ def build(out_dir: Path) -> bytes:
                 palette.append(colour)
                 palette_index[colour] = idx
 
-            layer_list.append({
+            (mask_list if is_mask else layer_list).append({
                 "Format": 10,                          # PaintGlyph
                 "Glyph": shape,
                 "Paint": {"Format": 2, "PaletteIndex": idx, "Alpha": opacity},
@@ -254,7 +257,18 @@ def build(out_dir: Path) -> bytes:
         # Derive the clip box from the real ink bounds of every layer.
         if not layer_list or bounds.bounds is None:
             continue
-        colour_glyphs[base] = {"Format": 1, "Layers": layer_list}
+        if mask_list:
+            # Translucent artwork: the opaque colour layers keep it seam-free, and the
+            # nested alpha masks are applied to the whole group (DEST_IN keeps the
+            # backdrop only where, and as much as, the source covers it).
+            colour_glyphs[base] = {
+                "Format": 32,                          # PaintComposite
+                "SourcePaint": {"Format": 1, "Layers": mask_list},
+                "CompositeMode": "DEST_IN",
+                "BackdropPaint": {"Format": 1, "Layers": layer_list},
+            }
+        else:
+            colour_glyphs[base] = {"Format": 1, "Layers": layer_list}
         x0, y0, x1, y1 = bounds.bounds
         clip_boxes[base] = (
             round(x0), round(y0) - CLIP_PAD_Y,
