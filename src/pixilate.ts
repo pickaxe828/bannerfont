@@ -157,12 +157,9 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
   // Seams: two shapes that meet on an edge are anti-aliased separately, so each one
   // lets the background bleed through along that edge. Fix it by growing every layer
   // one cell *under* the later, opaque layers it touches. Later layers paint over the
-  // growth, so no opaque pixel changes colour and the outer edge stays exact.
-  const inside = (cell: number) => {
-    const x = (cell % VERTEX_STRIDE) - 1
-    const y = Math.floor(cell / VERTEX_STRIDE) - 1
-    return x >= 0 && x < image.width && y >= 0 && y < image.height
-  }
+  // growth, so no opaque pixel changes colour and the outer edge stays exact. The growth
+  // never leaves the visible cells: a colour layer must stay inside the mask, because
+  // not every renderer clears the backdrop outside the source of a DEST_IN composite.
   const owner = new Map<number, number>()
   const order = [...layers.keys()]
   order.forEach((colour, index) => { for (const cell of layers.get(colour)!) { owner.set(cell, index) } })
@@ -173,9 +170,6 @@ export function processImage(path: string, colorNumber: number, detailedColorNum
       for (const near of [cell - 1, cell + 1, cell - VERTEX_STRIDE, cell + VERTEX_STRIDE]) {
         const other = owner.get(near)
         if (other !== undefined && other > index && (order[other] & 0xff) === 255) { extra.add(near) }
-        // The mask has its own anti-aliased edge, so the colour must fully cover it:
-        // grow into the transparent cells around the shape, which the mask hides.
-        if (translucent && other === undefined && inside(near)) { extra.add(near) }
       }
     }
     grown.set(colour, extra.size === 0 ? layers.get(colour)! : layers.get(colour)!.concat([...extra]))

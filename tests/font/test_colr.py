@@ -44,6 +44,27 @@ class ColrTest(RealFontTestCase):
         return (min(b[0] for b in boxes), min(b[1] for b in boxes),
                 max(b[2] for b in boxes), max(b[3] for b in boxes))
 
+    def box(self, paint):
+        glyf = self.font["glyf"]
+        boxes = [(g.xMin, g.yMin, g.xMax, g.yMax)
+                 for g in (glyf[n] for n in shape_glyphs(self.colr, paint)) if g.numberOfContours]
+        return (min(b[0] for b in boxes), min(b[1] for b in boxes),
+                max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+    def test_colours_of_a_masked_banner_stay_inside_its_mask(self):
+        """Not every renderer clears the backdrop outside the source of a DEST_IN (FontGoggles
+        does not), so colour painted beyond the mask shows up unmasked: a stray row where the
+        texture is fully transparent."""
+        bad = []
+        for cp in BANNER_CODEPOINTS:
+            paint = self.paints[self.cmap[cp]]
+            if paint.Format != PAINT_COMPOSITE:
+                continue
+            colour, mask = self.box(paint.BackdropPaint), self.box(paint.SourcePaint)
+            if colour[0] < mask[0] or colour[1] < mask[1] or colour[2] > mask[2] or colour[3] > mask[3]:
+                bad.append(hex(cp))
+        self.assertEqual(bad, [])
+
     def test_colr_is_version_1_and_cpal_is_present(self):
         self.assertEqual(self.colr.Version, 1)
         self.assertIn("CPAL", self.font)

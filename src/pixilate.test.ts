@@ -103,10 +103,10 @@ describe("seam overlap", () => {
     assert.ok(!masks[1].includes("fill-opacity"))
   })
 
-  it("grows the colour layers into the transparent cells around them, which the mask hides", async () => {
+  it("keeps the colour layers inside the visible cells, so no renderer shows them unmasked", async () => {
     const file = await build(128)
-    assert.deepEqual(extentOf(file, "#ff0000"), [4, 11])
-    assert.deepEqual(extentOf(file, "#0000ff"), [10, 16])
+    assert.deepEqual(extentOf(file, "#ff0000"), [5, 11])
+    assert.deepEqual(extentOf(file, "#0000ff"), [10, 15])
   })
 
   it("writes no mask for an image without translucent pixels", async () => {
