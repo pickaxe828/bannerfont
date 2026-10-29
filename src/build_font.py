@@ -91,7 +91,17 @@ FULL_NAME = f"{FAMILY} {STYLE}"
 PS_NAME = f"{FAMILY}-{STYLE}"
 VERSION = 1.0
 VENDOR_ID = "BNFT"                                  # OS/2 achVendID, exactly 4 chars
-COPYRIGHT = "Copyright (c) 2023 Pickaxe828. MIT License."
+COPYRIGHT = ("Copyright (c) 2023 Pickaxe828. Code: MIT License. Glyphs are derived from "
+             "Minecraft textures, copyright Mojang Studios and Microsoft Corporation.")
+# nameID 13. The MIT License covers the code only; the textures and every derivative of
+# them (this font) stay with Mojang Studios and Microsoft Corporation. tests/vendor_identity.py
+# lists the phrases that the built font must keep.
+LICENSE_DESCRIPTION = (
+    "The glyphs in this font are derived from official Minecraft textures. The textures "
+    "and all derivatives of them, including this font, remain the property of Mojang "
+    "Studios and Microsoft Corporation. The MIT License applies to the source code only. "
+    "This is a non-commercial derivative work and is not endorsed by, associated with, "
+    "or approved by Mojang or Microsoft.")
 VENDOR_URL = "https://github.com/pickaxe828/bannerfont"
 
 FS_SELECTION_REGULAR = 1 << 6                       # OS/2 fsSelection bit 6
@@ -161,9 +171,10 @@ def read_gradients(root):
 
 
 def read_svg(path: Path):
-    """Return (viewBox_width, [(fill, opacity, path_d), ...]) for a stage 1 SVG.
+    """Return (viewBox_width, [(fill, opacity, path_d, is_mask), ...]) for a stage 1 SVG.
 
-    `fill` is a "#rrggbb" string, or a gradient dict from read_gradients for `fill="url(#id)"`."""
+    `fill` is a "#rrggbb" string, or a gradient dict from read_gradients for `fill="url(#id)"`.
+    A group with data-mask="1" is an alpha mask layer, see the COLR assembly in build()."""
     root = ET.parse(path).getroot()
     vb = root.get("viewBox")
     width = float(vb.split(",")[2]) if vb else 0.0
@@ -182,7 +193,7 @@ def read_svg(path: Path):
         for node in group.iter(f"{SVG_NS}path"):
             d = node.get("d")
             if d:
-                layers.append((fill, opacity, d))
+                layers.append((fill, opacity, d, group.get("data-mask") == "1"))
     return width, layers
 
 
@@ -307,8 +318,9 @@ def build(out_dir: Path, images_dir: Path | None = None, formats=FORMATS) -> byt
         # One SVG group becomes one COLR layer. `bounds` tracks the ink of them all.
         bounds = BoundsPen(None)
         layer_list = []
+        mask_list = []
 
-        for fill, opacity, d in layers:
+        for fill, opacity, d, is_mask in layers:
             found = shape_for(d)
             if found is None:
                 continue
@@ -319,25 +331,41 @@ def build(out_dir: Path, images_dir: Path | None = None, formats=FORMATS) -> byt
             else:
                 # Colours go into the CPAL palette once each. Alpha stays per layer.
                 paint = {"Format": 2, "PaletteIndex": palette_for(parse_colour(fill)), "Alpha": opacity}
-            layer_list.append({"Format": 10, "Glyph": shape, "Paint": paint})   # PaintGlyph
+            (mask_list if is_mask else layer_list).append({"Format": 10, "Glyph": shape, "Paint": paint})   # PaintGlyph
 
-        # COLRv0 layers: the glyph's own flat layers, or its `.flat.svg` twin when it has gradients.
-        # v0 has no paint alpha, so the alpha is baked into its own palette entry.
+        # COLRv0 layers: the glyph's own flat layers, or its `.flat.svg` twin when it has gradients
+        # or alpha masks (v0 has no gradients and no PaintComposite). v0 has no paint alpha either,
+        # so the alpha is baked into its own palette entry.
         flat_path = path.with_name(stem + ".flat.svg")
+        has_mask = any(is_mask for *_, is_mask in layers)
         flat_source = read_svg(flat_path)[1] if flat_path.exists() else layers
         flat = []
-        for fill, opacity, d in (flat_source if "colrv0" in formats else ()):
+        for fill, opacity, d, is_mask in (flat_source if "colrv0" in formats else ()):
+            if is_mask:
+                continue                               # a twin never has masks; a lone glyph loses its alpha
             if isinstance(fill, dict):
                 raise ValueError(f"{path.name} has a gradient and no {flat_path.name} fallback")
             found = shape_for(d)
             if found is not None:
                 flat.append((found[0], palette_for(parse_colour(fill)[:3] + (opacity,))))
-        markup = svg_inner(path)
+        # The SVG table cannot draw the mask groups either: it takes the plain twin of such a glyph.
+        markup = svg_inner(flat_path if has_mask and flat_path.exists() else path)
 
         # Derive the clip box from the real ink bounds of every layer.
         if not layer_list or bounds.bounds is None:
             continue
-        colour_glyphs[base] = {"Format": 1, "Layers": layer_list}
+        if mask_list:
+            # Translucent artwork: the opaque colour layers keep it seam-free, and the
+            # nested alpha masks are applied to the whole group (DEST_IN keeps the
+            # backdrop only where, and as much as, the source covers it).
+            colour_glyphs[base] = {
+                "Format": 32,                          # PaintComposite
+                "SourcePaint": {"Format": 1, "Layers": mask_list},
+                "CompositeMode": "DEST_IN",
+                "BackdropPaint": {"Format": 1, "Layers": layer_list},
+            }
+        else:
+            colour_glyphs[base] = {"Format": 1, "Layers": layer_list}
         flat_layers[base] = flat
         svg_markup[base] = markup
         if width == 0:
@@ -382,6 +410,7 @@ def build(out_dir: Path, images_dir: Path | None = None, formats=FORMATS) -> byt
         "version": f"Version {VERSION:.3f}",           # 5
         "psName": PS_NAME,                             # 6
         "vendorURL": VENDOR_URL,                       # 11
+        "licenseDescription": LICENSE_DESCRIPTION,     # 13
     })
     fb.font["head"].fontRevision = VERSION             # must match nameID 5
     fb.setupOS2(sTypoAscender=ASCENDER, sTypoDescender=DESCENDER,

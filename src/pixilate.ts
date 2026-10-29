@@ -127,24 +127,67 @@ const svgDocument = (canvasWidth: number, body: string) =>
   `<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"` +
   ` width="${canvasWidth}" height="${BANNER_HEIGHT}" viewBox="0,0,${canvasWidth},${BANNER_HEIGHT}">${body}</svg>`
 
-/** Quantizes RGBA pixels in place to `colorNumber` colors and buckets the visible cells by packed RGBA. */
-function bucketByColour(pixels: Uint8ClampedArray, width: number, height: number, colorNumber: number) {
+/**
+ * Quantizes RGBA pixels in place to `colorNumber` colors and buckets the visible cells by packed RGBA.
+ *
+ * With `splitAlpha`, an image that has translucent pixels is split instead: the color layers are all
+ * opaque (keyed by RGB alone) and the alpha goes into separate `alphas` levels, which build_font.py
+ * composites over them. Translucent shapes cannot overlap without showing double alpha, so they
+ * cannot be made seam-free; opaque ones can.
+ */
+function bucketByColour(pixels: Uint8ClampedArray, width: number, height: number, colorNumber: number, splitAlpha = false) {
   const palette = quanti(pixels, colorNumber, 4) // 4 = RGBA
   palette.process(pixels)
+
+  let translucent = false
+  if (splitAlpha) {
+    for (let i = 3; i < pixels.length; i += 4) { if (pixels[i] > 0 && pixels[i] < 255) { translucent = true; break } }
+  }
 
   // Insertion order is scan order, which is the order the layers are painted in - build_font.py
   // turns each one into a COLR layer.
   const layers = new Map<number, number[]>()
+  const alphas = new Map<number, number[]>()
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
       if (pixels[i + 3] === 0) { continue } // transparent
-      const colour = (pixels[i] << 24) | (pixels[i + 1] << 16) | (pixels[i + 2] << 8) | pixels[i + 3]
+      const alpha = translucent ? 255 : pixels[i + 3]
+      const colour = (pixels[i] << 24) | (pixels[i + 1] << 16) | (pixels[i + 2] << 8) | alpha
       const cells = layers.get(colour)
       if (cells === undefined) { layers.set(colour, [vertex(x, y)]) } else { cells.push(vertex(x, y)) }
+      if (translucent) {
+        const level = alphas.get(pixels[i + 3])
+        if (level === undefined) { alphas.set(pixels[i + 3], [vertex(x, y)]) } else { level.push(vertex(x, y)) }
+      }
     }
   }
-  return layers
+  return { layers, alphas, translucent }
+}
+
+/**
+ * Seams: two shapes that meet on an edge are anti-aliased separately, so each one lets the background
+ * bleed through along that edge. Fix it by growing every layer one cell *under* the later, opaque layers
+ * it touches. Later layers paint over the growth, so no opaque pixel changes colour and the outer edge
+ * stays exact. The growth never leaves the visible cells: a color layer must stay inside the mask,
+ * because not every renderer clears the backdrop outside the source of a DEST_IN composite.
+ */
+function overlapSeams(layers: Map<number, number[]>) {
+  const owner = new Map<number, number>()
+  const order = [...layers.keys()]
+  order.forEach((colour, index) => { for (const cell of layers.get(colour)!) { owner.set(cell, index) } })
+  const grown = new Map<number, number[]>()
+  order.forEach((colour, index) => {
+    const extra = new Set<number>()
+    for (const cell of layers.get(colour)!) {
+      for (const near of [cell - 1, cell + 1, cell - VERTEX_STRIDE, cell + VERTEX_STRIDE]) {
+        const other = owner.get(near)
+        if (other !== undefined && other > index && (order[other] & 0xff) === 255) { extra.add(near) }
+      }
+    }
+    grown.set(colour, extra.size === 0 ? layers.get(colour)! : layers.get(colour)!.concat([...extra]))
+  })
+  return grown
 }
 
 const hexOf = (colour: number) => ((colour >>> 8) & 0xffffff).toString(16).padStart(6, "0")
@@ -157,6 +200,27 @@ function flatGroups(layers: Map<number, number[]>, offset: number) {
     const alpha = colour & 0xff
     const opacity = alpha === 255 ? "" : ` fill-opacity="${round5(alpha / 255)}"`
     groups += `<g fill="#${hexOf(colour)}"${opacity} fill-rule="nonzero"><path d="${traceOutline(cells, offset)}"/></g>`
+  }
+  return groups
+}
+
+/**
+ * Mask layers: level k covers every cell with alpha >= a_k, so the levels are nested and share no edge
+ * that could leave a seam. Each is painted with the increment that takes the running alpha from
+ * a_(k-1) to a_k.
+ */
+function maskGroups(alphas: Map<number, number[]>, offset: number) {
+  let groups = ""
+  let previous = 0
+  let covered: number[] = []
+  const nested = new Map<number, number[]>()
+  for (const level of [...alphas.keys()].sort((a, b) => b - a)) { covered = covered.concat(alphas.get(level)!); nested.set(level, covered) }
+  for (const level of [...alphas.keys()].sort((a, b) => a - b)) {
+    const target = level / 255
+    const step = 1 - (1 - target) / (1 - previous)
+    previous = target
+    const opacity = step >= 1 ? "" : ` fill-opacity="${round5(step)}"`
+    groups += `<g data-mask="1" fill="#000000"${opacity} fill-rule="nonzero"><path d="${traceOutline(nested.get(level)!, offset)}"/></g>`
   }
   return groups
 }
@@ -190,7 +254,7 @@ function rampSvg(path: string, offset: number, canvasWidth: number, classes: num
   const opaque = new Uint8ClampedArray(pixels)
   for (let i = 3; i < opaque.length; i += 4) { opaque[i] = 255 }
   // A pixel that is fully transparent in the source stays out of every class.
-  const buckets = bucketByColour(opaque, width, height, classes)
+  const buckets = bucketByColour(opaque, width, height, classes).layers
   const visible = new Set<number>()
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) { if (pixels[(y * width + x) * 4 + 3] !== 0) { visible.add(vertex(x, y)) } }
@@ -235,13 +299,18 @@ export function processImage(path: string, colorNumber: number, ramp: RampOption
   // Trace each colour's pixels into one path, and emit the SVG directly. Paper.js is
   // not involved: it only ever saw axis-aligned unit squares on an integer grid, which
   // traceOutline unions exactly and far more cheaply than a boolean op can.
-  const flat = (colors: number) =>
-    svgDocument(canvasWidth, flatGroups(bucketByColour(imageData.data, image.width, image.height, colors), offset))
+  const original = new Uint8ClampedArray(imageData.data)
+  const flat = (pixels: Uint8ClampedArray, colors: number) =>
+    svgDocument(canvasWidth, flatGroups(bucketByColour(pixels, image.width, image.height, colors).layers, offset))
 
   if (RAMP_PATTERNS.includes(currentCode)) {
-    return { svg: rampSvg(path, offset, canvasWidth, ramp.classes), fallbackSvg: flat(ramp.fallbackColors) }
+    return { svg: rampSvg(path, offset, canvasWidth, ramp.classes), fallbackSvg: flat(imageData.data, ramp.fallbackColors) }
   }
-  return { svg: flat(colorNumber) }
+
+  const { layers, alphas, translucent } = bucketByColour(imageData.data, image.width, image.height, colorNumber, true)
+  const svg = svgDocument(canvasWidth, flatGroups(overlapSeams(layers), offset) + maskGroups(alphas, offset))
+  // COLRv0 and the SVG table cannot draw alpha masks: a translucent image gets a plain RGBA twin for them.
+  return translucent ? { svg, fallbackSvg: flat(original, colorNumber) } : { svg }
 }
 
 /**
@@ -311,6 +380,8 @@ export interface PixilateOptions {
   output: string
   /** Colors per image, including the transparent layer. */
   colors: number
+  /** Colors of the flat COLRv0 twin of the gradient patterns (13 and 14). Defaults to `RAMP_FALLBACK_COLORS`. */
+  gradientColors?: number
 }
 
 export interface PixilateResult {
@@ -327,13 +398,13 @@ const messageOf = (err: unknown) => (err instanceof Error ? err.message : String
  * the geometry-free glyphs (U+CFFF7, the space block, the control gaps) after their PNGs.
  */
 export async function pixilatePaths(paths: string[], options: PixilateOptions): Promise<PixilateResult> {
-  const { output, colors } = options
+  const { output, colors, gradientColors = RAMP_FALLBACK_COLORS } = options
   fs.mkdirSync(output, { recursive: true })
   const result: PixilateResult = { written: 0, failed: [] }
 
   const convert = async (file: string) => {
     try {
-      const { svg, fallbackSvg } = processImage(file, colors)
+      const { svg, fallbackSvg } = processImage(file, colors, { classes: RAMP_COLOR_CLASSES, fallbackColors: gradientColors })
       const glyph = Path.join(output, getName_King(Path.basename(file, Path.extname(file))))
       await fs.promises.writeFile(glyph + ".svg", svg)
       if (fallbackSvg !== undefined) { await fs.promises.writeFile(glyph + ".flat.svg", fallbackSvg) }
