@@ -38,7 +38,7 @@ The repository contains no Mojang assets. `pnpm bannerfont extract` reads the ba
 - `-o/--output <dir>` changes where the PNGs go (default `./images`), `--cache <dir>` changes the cache folder (default `./.cache`)
 - A jar that lacks a pattern texture gets one warning per pattern. Older versions have fewer patterns: 1.12.2 lacks 4 of them, 1.14 lacks 3 and 1.16.5 lacks 2. The font maps the codepoints of the missing banners to a visible box glyph. The `flow` and `guster` patterns exist from 1.20.5
 
-The layer color digit `x` (`0`-`f`) and the pattern number `yy` (`00`-`42`) follow a fixed encoding that is documented in `CLAUDE.md`. The layer color order is not the Minecraft wiki order.
+The layer color digit `x` (`0`-`f`) and the pattern number `yy` (`00`-`42`) follow a fixed encoding that is documented in `AGENTS.md`. The layer color order is not the Minecraft wiki order.
 
 Run `pnpm test` for the unit tests (extract stage, PNG codec, CLI wiring and the font build on synthetic input). The real-font tests are `pnpm bannerfont test`, which checks `build/Font.ttf` and is also the last step of `pnpm bannerfont build`.
 

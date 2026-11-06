@@ -11,7 +11,7 @@ below are copied from it rather than invented:
   advance   nanoemoji's `_advance_width` is max(--width, (asc - desc) * vb.w / vb.h).
             The old generate_font.sh passed `--width 0`, so with 950/-250 metrics and a
             height-40 canvas that is exactly 30 * viewBox.w -- one banner (vb.w=20)
-            is 600 units. See CLAUDE.md.
+            is 600 units. See AGENTS.md.
   transform nanoemoji applied `--transform "translate(-20, 0)"` in *font* units,
             after mapping the viewBox to the ascender..descender band.
   clip box  every colour glyph needs one. Without it HarfBuzz derives extents from

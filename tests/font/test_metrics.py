@@ -49,7 +49,7 @@ class AdvanceTest(RealFontTestCase):
             self, positive, lambda cp: BANNER_ADVANCE * (cp - SPACE_ZERO)), [])
 
     def test_negative_spaces_are_clamped_to_zero_advance(self):
-        # Pins today's behaviour (CLAUDE.md, "Negative spaces do not work yet"). When
+        # Pins today's behaviour (AGENTS.md, "Negative spaces do not work yet"). When
         # negative spaces are implemented this fails, and is meant to: replace it then.
         self.assertEqual(codepoints_with_wrong_advance(
             self, range(SPACE_ZERO - 64, SPACE_ZERO), 0), [])
