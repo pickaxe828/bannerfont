@@ -4,7 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, it } from "node:test"
 
-import { FONT_PATH, SVG_DIR, buildFont, testFont, type Runner } from "./font.ts"
+import { DEFAULT_IMAGES_DIR } from "./extract.ts"
+import { FONT_PATH, SVG_DIR, WEB_DIR, buildFont, testFont, type Runner } from "./font.ts"
 
 /** A runner that records its calls and answers with `code`. */
 function fakeRunner(code: number, output = "") {
@@ -17,13 +18,17 @@ function fakeRunner(code: number, output = "") {
 }
 
 describe("buildFont", () => {
-  it("compiles out/ into build/Font.ttf with uv and shows the child's output", async () => {
+  it("compiles out/ into build/Font.ttf and build/web with uv and shows the child's output", async () => {
     const { run, calls } = fakeRunner(0)
 
     await buildFont({ run })
 
     assert.deepEqual(calls, [
-      { cmd: "uv", args: ["run", "python", "src/build_font.py", SVG_DIR, FONT_PATH], show: true },
+      {
+        cmd: "uv",
+        args: ["run", "python", "src/build_font.py", SVG_DIR, FONT_PATH, "--images", DEFAULT_IMAGES_DIR, "--web", WEB_DIR],
+        show: true,
+      },
     ])
   })
 

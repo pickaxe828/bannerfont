@@ -4,7 +4,7 @@ This file provides guidance to coding agents working in this repository.
 
 ## What this is
 
-bannerfont turns Minecraft banner textures into a **COLRv1 colour font**, so web apps outside Minecraft (originally a BetterDiscord theme) can render ClongCraft banner writing as ordinary text in the Unicode Private Use Area.
+bannerfont turns Minecraft banner textures into a **colour font**, so web apps outside Minecraft (originally a BetterDiscord theme) can render ClongCraft banner writing as ordinary text in the Unicode Private Use Area. COLRv1 is the primary format; COLRv0, OpenType-SVG and sbix bitmaps ride along as fallbacks for the platforms that cannot draw COLRv1 (see "Colour formats").
 
 There is no runtime app here — the repo is a one-shot asset pipeline plus the built `.ttf`.
 
@@ -19,7 +19,7 @@ pnpm bannerfont build --mc-version 1.20.4   # flags of build: --mc-version, --ca
 pnpm bannerfont build --quality high        # presets: standard (default) or high
 pnpm bannerfont extract      # stage 0 only: Mojang client jar -> 688 PNGs in ./images
 pnpm bannerfont pixilate images/   # stage 1 only: raster -> vector SVGs into ./out
-pnpm bannerfont font         # stage 2 only: ./out/*.svg -> build/Font.ttf (assumes ./out is populated)
+pnpm bannerfont font         # stage 2 only: ./out/*.svg (+ ./images) -> build/Font.ttf and build/web/ (assumes ./out is populated)
 pnpm bannerfont test         # font tests only (needs build/Font.ttf)
 pnpm bannerfont prune        # clear ./out
 pnpm bannerfont              # no command: a select on a TTY, usage and exit 1 otherwise
@@ -37,14 +37,15 @@ uv run python -m unittest discover -s tests/font -t .   # same tests, plain unit
 
 - `extract` flags: `--mc-version <id>` (default `1.21.2`), `-o/--output` (default `./images`), `--cache` (default `./.cache`). `fflate` is a runtime dependency of it, for reading the zip.
 - `pixilate` flags: `-o/--output` (default `./out`), `-q/--quality standard|high` (default `standard`), `-c/--colors|--colours` (default `3`, **including** the transparent layer). Accepts any mix of files and directories as positional args; with none, the default is `./images`. In a directory only `*.png` files are converted.
-- **Quality presets** (`QUALITY_PRESETS` in `src/options.ts`): `standard` is 3 colors and 10 for the gradient patterns 13/14 (the original colours; the seam overlap below grows the paths, so the SVGs are no longer byte-identical); `high` is 128 and 600, which is **lossless**: the textures have at most 80 opaque colors (525 in 13/14), so every pixel is kept exactly (1117 KB against 89 KB, build ~14 s against ~2.4 s; the budget is 10 MB). Raising the numbers further changes nothing. Measured in between: 32/128 is 542 KB and 64/256 is 617 KB with visible loss, so lossless is both the best and nearly the smallest. `--quality` always wins and never prompts; without it a TTY gets a select, unless `-c` is given. `-c` replaces only the preset's base colors, not its gradient colors. `standard.gradientColors` must equal `DETAILED_COLORS` in `src/pixilate.ts` (a test checks it). A preset changes the SVG detail only, never the encoding.
-- `font` runs `uv run python src/build_font.py out build/Font.ttf`. Its output, stderr included, is shown, and a non-zero exit fails the command.
+- **Quality presets** (`QUALITY_PRESETS` in `src/options.ts`): `standard` is 3 colors, and 16 for the flat COLRv0 twin of the gradient patterns 13/14 (the COLRv1 and SVG gradient of those two does not depend on it, see "Per-pattern exceptions"); `high` is 128 and 600, which is **lossless**: the textures have at most 80 opaque colors (525 in 13/14), so every pixel is kept exactly. The sizes below were measured on main before the ramp gradients: 1117 KB against 89 KB, build ~14 s against ~2.4 s, budget 10 MB; they have not been re-measured on the merged code. Raising the numbers further changes nothing. Measured in between: 32/128 is 542 KB and 64/256 is 617 KB with visible loss. `--quality` always wins and never prompts; without it a TTY gets a select, unless `-c` is given. `-c` replaces only the preset's base colors, not its gradient colors. `standard.gradientColors` must equal `RAMP_FALLBACK_COLORS` in `src/pixilate.ts` (a test checks it). A preset changes the SVG detail only, never the encoding.
+- **Seams and alpha masks** (non-ramp patterns, `src/pixilate.ts`): two shapes that meet on an edge are anti-aliased separately and let the background bleed through, so `overlapSeams` grows every layer one cell under the later opaque layers it touches. An image with translucent pixels is split instead: opaque colour layers plus nested `data-mask="1"` alpha layers, which `build_font.py` composites with a COLRv1 `PaintComposite` (`DEST_IN`). COLRv0 and OpenType-SVG cannot draw those masks, so a translucent image also gets a plain RGBA `<glyph>.flat.svg` twin, which `build_font.py` reads for the v0 layers and for the SVG document.
+- `font` runs `uv run python src/build_font.py out build/Font.ttf --images images --web build/web`. Its output, stderr included, is shown, and a non-zero exit fails the command. `build_font.py` also takes `--formats colrv1,colrv0,svg,sbix` (default all) to build a font with fewer colour formats, which is how the web fonts are made and how to bisect a renderer problem.
 - `test` runs only the real-font suite, `uv run python tests/font/run.py` (the JSON-lines runner, which sets `REQUIRE_REAL_FONT=1`), and shows one line per test result; it fails if `build/Font.ttf` is missing or any test fails. `build` keeps `build/Font.ttf` and exits non-zero if those tests fail. Code tests stay on `pnpm test`.
 
 TypeScript runs through **tsx** (`pnpm bannerfont` → `tsx src/cli.ts`); nothing is compiled. `pnpm typecheck` runs `tsc` (`noEmit`) and checks the types; there is no linter. `pnpm test` runs `tsx --test "src/**/*.test.ts"` (`node:test`, no extra dependency) over the pure functions of the extract stage, the PNG codec, the option resolution, the pixilate stage, the font stage wiring (with an injected runner) and `prune`. Python tests are stdlib `unittest` and live in two suites:
 
-- **`tests/code/`** is the synthetic suite: it calls `build_font.build()` on tiny hand-written SVGs and needs no build output (`test_missing_glyph.py` for the `.missing` glyph; `test_mask.py` for the alpha-mask `PaintComposite`; `test_vendor.py` for the vendor ID `achVendID`, the vendor URL, the unique font identifier and the copyright / license notice; `support.py` holds the SVG fixtures and `build_with`). `pnpm test` runs it after the TS tests.
-- **`tests/font/`** checks the real `build/Font.ttf`, read with fontTools. The nine font invariants are numbered in the module docstrings: 1-5 in `test_metrics.py` (cmap count, base/overlay/control/space advances, `lsb == xMin`), 6-7 in `test_coverage.py` (no ASCII, blank gid 1, nothing mapped to `.missing`), 8 in `test_colr.py` (COLR/CPAL, base width, overlay bounds, clip boxes, colour layers inside their mask; it follows `PaintComposite` too), 9 in `test_identity.py` (vendor identity, and the Mojang / Microsoft notice in nameID 0 and 13; the MIT License covers the code only, the textures and the font derived from them belong to Mojang Studios and Microsoft Corporation). `test_render.py` adds one `hb-view` render test: base plus one overlay must change pixels, and only inside the banner cell (not in the margins). `pnpm test` never runs it, because it needs a built font: build first (`pnpm bannerfont build`), then `pnpm bannerfont test` or `pnpm test:font`. `bannerfont test` runs this same `tests/font/run.py` and shows each JSON line as a Clack result (the failure message of a failing test is printed under it). `tests/font/run.py` prints one JSON object per result on stdout (`id`, `status`, `message`, `seconds`; `-k SUBSTRING` filters, repeatable) and exits 1 on any failure. It sets `REQUIRE_REAL_FONT=1`, so a missing font, `hb-shape` or `hb-view` is a failure there; under plain `unittest` each of them skips with a message on stderr, unless you set `REQUIRE_REAL_FONT=1` yourself. `BANNERFONT_TTF=<path>` points the suite at another font file, which is how to check that a test fails on a broken copy. The negative-space test pins today's clamping (U+F000-U+F03F advance 0) and is meant to fail when negative spaces are implemented. Both suites run as the `tests` package from the repo root (`-t .`) and share `tests/font_spec.py` (banner encoding, `.missing` box) and `tests/vendor_identity.py`.
+- **`tests/code/`** is the synthetic suite: it calls `build_font.build()` on tiny hand-written SVGs and needs no build output (`test_missing_glyph.py` for the `.missing` glyph; `test_mask.py` for the alpha-mask `PaintComposite`; `test_vendor.py` for the vendor ID `achVendID`, the vendor URL, the unique font identifier and the copyright / license notice; `test_color_formats.py` for the fallbacks, the gradient paint and the web split; `support.py` holds the SVG fixtures and `build_with`). A reloaded font has no glyph names (`post` format 3), so tests find glyphs through the cmap, not by the build's `g_ue000` names. `pnpm test` runs it after the TS tests.
+- **`tests/font/`** checks the real `build/Font.ttf`, read with fontTools. The ten font invariants are numbered in the module docstrings: 1-5 in `test_metrics.py` (cmap count, base/overlay/control/space advances, `lsb == xMin`), 6-7 in `test_coverage.py` (no ASCII, blank gid 1, nothing mapped to `.missing`), 8 in `test_colr.py` (COLR/CPAL, base width, overlay bounds, clip boxes, colour layers inside their mask; it follows `PaintComposite` too), 9 in `test_identity.py` (vendor identity, and the Mojang / Microsoft notice in nameID 0 and 13; the MIT License covers the code only, the textures and the font derived from them belong to Mojang Studios and Microsoft Corporation), 10 in `test_compat.py` (COLRv0 layers, SVG documents, sbix bitmaps and offsets, the ramp gradients). `test_render.py` adds one `hb-view` render test: base plus one overlay must change pixels, and only inside the banner cell (not in the margins). `pnpm test` never runs it, because it needs a built font: build first (`pnpm bannerfont build`), then `pnpm bannerfont test` or `pnpm test:font`. `bannerfont test` runs this same `tests/font/run.py` and shows each JSON line as a Clack result (the failure message of a failing test is printed under it). `tests/font/run.py` prints one JSON object per result on stdout (`id`, `status`, `message`, `seconds`; `-k SUBSTRING` filters, repeatable) and exits 1 on any failure. It sets `REQUIRE_REAL_FONT=1`, so a missing font, `hb-shape` or `hb-view` is a failure there; under plain `unittest` each of them skips with a message on stderr, unless you set `REQUIRE_REAL_FONT=1` yourself. `BANNERFONT_TTF=<path>` points the suite at another font file, which is how to check that a test fails on a broken copy. The negative-space test pins today's clamping (U+F000-U+F03F advance 0) and is meant to fail when negative spaces are implemented. Both suites run as the `tests` package from the repo root (`-t .`) and share `tests/font_spec.py` (banner encoding, `.missing` box) and `tests/vendor_identity.py`.
 
 `src/test.ts` and `src/test.py` are throwaway scratch files, not a suite.
 
@@ -84,9 +85,9 @@ PNGs are read and written with `src/png.ts`, not `node-canvas`: canvas premultip
 
 **Missing-texture warning.** If the jar lacks a pattern texture, extract prints one warning per pattern and writes no PNG for it. Texture counts per version: 1.12.2 and 1.13.2 have 39, 1.14 has 40, 1.16.5 and 1.20.4 have 41, and 1.20.5 onwards have all 43 (`flow` and `guster` first appear in 1.20.5), so 1.12.2 misses 4 patterns, 1.14 misses 3 and 1.16.5 misses 2. The font build maps every banner codepoint without a glyph to the `.missing` glyph (see below).
 
-Timing: **~9 s** cold (download of the ~40 MB jar), **~0.9 s** with the jar cached. A full `pnpm bannerfont build` with a cached jar and a clean `images/`, `out/` and `build/` takes ~2.4 s.
+Timing: **~9 s** cold (download of the ~40 MB jar), **~0.9 s** with the jar cached. A full `pnpm bannerfont build` with a cached jar and a clean `images/`, `out/` and `build/` takes ~6.8 s (it was ~2.4 s before the fallbacks: the sbix PNGs and three font builds for the web files cost the rest).
 
-**Stage 1 — `src/pixilate.ts` (`processImage`)**, the only nontrivial code in the repo:
+**Stage 1 — `src/pixilate.ts` (`processImage`)**, the only nontrivial code in the repo. Patterns 13 and 14 take the ramp route described under "Per-pattern exceptions"; every other pattern takes this one:
 
 1. Load PNG into `node-canvas` and read its pixels with `ctx.getImageData`.
 2. **Quantize** RGBA with `quanti` down to `colorNumber` colours.
@@ -111,11 +112,37 @@ Verified equivalent, not just plausible. Running both unions over the *same* pix
 
 **Pixel reading changed with it.** The old code went through `paper.Raster.getImageData`, which draws into a scratch canvas and reads back, so every pixel with alpha < 255 took an extra premultiply/un-premultiply round trip and lost 1–2 levels per channel. Reading `ctx.getImageData` once fixes that. It is a **visible change**: 642 of 688 banners shift, worst channel delta **7/255**, 2.9% of subpixels. The new colours are the correct ones — the old output landed outside the range of colours actually present in the source PNG.
 
-**Stage 2 — `src/build_font.py`**, invoked by `bannerfont font`: compiles `./out/*.svg` into `build/Font.ttf` in **one process** with fontTools. `build/Font.ttf` is the final output — nothing is copied anywhere afterwards.
+**Stage 2 — `src/build_font.py`**, invoked by `bannerfont font`: compiles `./out/*.svg` into `build/Font.ttf` (every colour format, for installing) and `build/web/` (the split web fonts) in **one process** with fontTools. Those are the final outputs — nothing is copied anywhere afterwards.
 
-This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `src/build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
+This used to be `nanoemoji --color_format glyf_colr_1`. nanoemoji is a *ninja generator*: it shells out one `picosvg` and one `write_part_file` process per SVG, so a full build spent **~420 s of CPU / 84 s wall across ~1640 Python interpreter startups** — measured, and ~85–95% of it was interpreter startup and imports, not font compilation. `src/build_font.py` does the same job with fontTools (which nanoemoji is itself built on) in **0.4 s**. (With all four colour formats and the web files, `bannerfont font` takes about 1.5 s.) nanoemoji and picosvg are no longer dependencies; only `fonttools` is.
 
 The replacement was verified against a nanoemoji-built reference on the same SVGs: identical `cmap` (818 entries then, no differences; the font now has 829, see the `.missing` section), **zero advance mismatches**, identical COLR paint structure, palette values and alphas, and `hb-view` renders of all 688 banner glyphs agreeing to within 2/255 on ~0.04 % of pixels (antialiasing rounding).
+
+### Colour formats
+
+COLRv1 is the best format and the narrowest. A font file may carry several colour formats at once and each renderer uses the richest one it understands, so `build/Font.ttf` carries four (`src/color_formats.py`, selected with `--formats`):
+
+| Format | Expected to be reached by | Notes |
+| --- | --- | --- |
+| COLRv1 | Chromium and Edge (98+), Firefox (107+), CoreText on current macOS, Windows 11 | the full-quality paint: gradients, one shared outline glyph per shape |
+| COLRv0 | older Chromium/Firefox/FreeType, Windows 8.1+ DirectWrite (Word, Office), WebKit | flat layers in the *same* COLR table. A glyph may have both a v0 record and a v1 paint; a v1 renderer uses the v1 paint. v0 has no paint alpha, so alpha is baked into extra CPAL entries |
+| OpenType-SVG (`SVG `) | Safari/WebKit, Firefox, Adobe apps, Windows 10+ DirectWrite | one gzip document per glyph, the stage 1 markup with a `matrix(30 0 0 30 -20 -950)` (the same canvas-to-font map as the outlines). Keeps the real gradient |
+| sbix | every Apple text stack | one strike at ppem 512: the exact extracted PNGs, 15 px per source pixel (300 x 600 px per cell). 512 is the smallest ppem where the cell is a whole number of pixels, so bitmaps land exactly on the cell. Offsets: base -10 px, overlay -310 px, bottom -125 px |
+
+The "expected" column is the documented support; only what is listed under "Measured" below was checked. Measured on this machine (macOS 27, Playwright's Chromium 156 and WebKit 27.2, and CoreText through a Swift script that registers the font for the process only):
+
+- Chromium: draws COLRv1 and COLRv0. Draws nothing from SVG or sbix-only fonts.
+- WebKit: draws COLRv0 alone and SVG alone and sbix alone, but **draws a font that has COLRv1 data and no SVG table wrongly** (the overlays come out as flat squares) even though `CSS.supports("font-tech(color-COLRv1)")` is false there. With an SVG table present it prefers SVG and draws correctly.
+- CoreText (native apps): draws all four formats alone and together.
+- Not tested: Firefox (Playwright's build will not start in this sandbox), Windows and Office, Android, iOS. They are the open risk; `build/web/index.html` is a page to open there.
+
+So the formats are combined as follows, and the combination is part of the contract:
+
+- **`build/Font.ttf`**: all four. For installing (Font Book, Windows, Office, Pages) and for anything that wants one file. About 1.5 MB, 1.2 MB of it sbix.
+- **`build/web/`**: `BannerFont-colrv1.woff2` (COLRv1 only, ~16 KB) and `BannerFont-compat.woff2` (COLRv0 + SVG, no v1, ~180 KB), plus `BannerFont.css` and `index.html`. The stylesheet lists the colrv1 file with `tech(color-COLRv1)` and the compat file last without `tech()`, so Chromium and Firefox download 16 KB, Safari and old browsers get the compat file. **Never put COLRv1 and COLRv0 in a font without an SVG table and serve it to WebKit.**
+- sbix is built only when `--images` points at the PNGs; without them it is skipped with a note on stderr.
+
+The Python-side layout: `build()` collects, per glyph, the COLRv1 paint layers, the flat v0 layers and the SVG markup in the same loop, and the tables are attached at the end. The flat shapes are built only when `colrv0` is requested.
 
 ### The encoding is frozen
 
@@ -176,14 +203,32 @@ The built font has **829** `cmap` entries: 688 banners, the 128 space glyphs, U+
 
 ### Per-pattern exceptions
 
-- Patterns `13` (`gra`, gradient) and `14` (`gru`, gradient up) quantize to `detailedColorNumber` (the `DETAILED_COLORS` constant, `10`, in `src/pixilate.ts`) instead of the default 3 — 3 colors destroys a gradient.
+- Patterns `13` (`gra`, gradient) and `14` (`gru`, gradient up) are the **ramp patterns** (`RAMP_PATTERNS` in `src/pixilate.ts`). They are a noisy gray texture under a vertical alpha ramp, so they are not quantized to RGBA at all (that gave visible bands: RMSE 5.1 at 9 layers, and the cost of hiding the bands is in the table below). `rampSvg` instead
+  1. fits one straight line through the per-row mean alpha (it is linear: 1.0 at the first row's center, about 0.02 at the last row's, mirrored for 14),
+  2. quantizes the *colour alone*, with every pixel made opaque, into `RAMP_COLOR_CLASSES` (4) classes and traces each class like any other layer,
+  3. paints every class with a `<linearGradient>` of its own colour whose two stops carry the fitted alphas. `build_font.py` turns that into a COLRv1 `PaintLinearGradient`, and the SVG table keeps it as is.
+  Pixels come from `decodePng`, not node-canvas, because canvas premultiplies and destroys the colour of the faint end of the ramp. Measured against the source PNGs: RMSE 0.77, worst pixel 5/255, and a COLRv1-only font of 60 KB (the old output was 70 KB at RMSE 5.1).
+- Each ramp glyph also gets a **`<glyph>.flat.svg`** twin: the old quantized RGBA trace, `RAMP_FALLBACK_COLORS` (16) colours. COLRv0 has no gradients, so `build_font.py` reads the twin as the glyph's v0 layers. The twin is not a glyph: `build_font.py` skips `*.flat.svg` when it lists glyphs, and a gradient without a twin is a build error.
 - Pattern `00` is the base and is the only one that gets a non-zero canvas width (see above).
 
 Both exceptions key off `currentCode`, the `yy` slice of the filename — filename format is load-bearing logic, not just bookkeeping.
 
+**Why not more quantization colours, or stacked rectangles?** Both were measured on the 32 ramp glyphs (the rest of the font at 3 colours, COLRv1 only), see `experiments/gradient/README.md` for the method.
+
+| ramp colours (old method) | RMSE | layers/glyph | whole font | font stage |
+| --- | --- | --- | --- | --- |
+| 3 | 19.9 | 2 | 55 KB | 0.3 s |
+| 10 (the old default) | 5.1 | 9 | 70 KB | 0.3 s |
+| 32 | 2.2 | 31 | 120 KB | 0.5 s |
+| 64 | 1.4 | 63 | 169 KB | 1.0 s |
+| 256 | 0.53 | 253 | 340 KB | 4.4 s |
+| **new: 4 colour classes + gradient** | **0.77** | 4 | **60 KB** | 0.3 s |
+
+More slots cost size and font time roughly linearly, because the noise in the texture, not the ramp, makes the outlines. A primitive-style fit of translucent grid-aligned rectangles (`experiments/gradient/rectfit.py`) does poorly here: "over" compositing can only raise alpha, so a greedy fit cannot undo an early layer that is too opaque. It reaches RMSE 3.7 only with 40 layers and a refinement pass (11 s per image), and it has nothing to offer the other 41 patterns, which are flat pixel art that quantization already reproduces.
+
 ## Repo hygiene
 
-`.gitignore` excludes `build/`, `*.svg`, `images/**`, `oracle/` and `.cache/`, so build output, generated SVGs, the extracted PNGs, the oracle and the cached jar are not tracked. No PNG is in the index any more: `images/` is regenerated by `bannerfont extract`, and the old tracked set moved to `oracle/` (local only). The earlier "partly tracked" state is gone, so do not add anything under `images/` or `oracle/`. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
+`.gitignore` excludes `build/` (`Font.ttf` and `web/`), `*.svg`, `images/**`, `oracle/` and `.cache/`, so build output, generated SVGs, the extracted PNGs, the oracle and the cached jar are not tracked. No PNG is in the index any more: `images/` is regenerated by `bannerfont extract`, and the old tracked set moved to `oracle/` (local only). The earlier "partly tracked" state is gone, so do not add anything under `images/` or `oracle/`. **No built `.ttf` is tracked** since `public/` was removed — consumers have to build it, or it has to be published some other way.
 
 The Deta Space hosting is gone: `public/`, `shell.sh` and `setup.sh` have all been removed. So have the other `.sh` scripts (`generate_full.sh`, `generate_font.sh`, `prune.sh`): the `bannerfont` CLI replaced them, and the setup steps live in the README.
 

@@ -14,8 +14,19 @@ This repo is a simple tool convert Minecraft banners into a special font to be u
   - Run `pnpm install` in terminal
   - Run `uv sync` in terminal
 1. Run `pnpm bannerfont build` to generate the font
-  - Built files are in `./build`, as `Font.ttf`
+  - `./build/Font.ttf` is the font to install on a desktop. It carries every colour format (COLRv1, COLRv0, OpenType-SVG and sbix bitmaps), so it draws in the widest range of programs
+  - `./build/web/` is the font for a web page: two small `.woff2` files, `BannerFont.css` and a check page `index.html`. Use the stylesheet as it is: Chromium and Firefox download the 16 KB COLRv1 file, Safari and older browsers the other one
   - It finishes by running the font tests; the font stays in `./build` even if they fail, but the command exits non-zero
+
+### Which program draws what
+| Format | Browsers and programs |
+| --- | --- |
+| COLRv1 | Chrome and Edge 98+, Firefox 107+, macOS CoreText, Windows 11 |
+| COLRv0 | older Chrome and Firefox, Windows (Word, Office), Safari |
+| OpenType-SVG | Safari, Firefox, Adobe apps, Windows 10+ |
+| sbix | macOS and iOS apps |
+
+Only Chromium, WebKit and macOS CoreText are checked in this repository. Open `build/web/index.html` in any other browser or on a phone to see what it draws; `AGENTS.md` has the details of what was measured.
 
 Run the commands from the repository root. `pnpm bannerfont` with no command opens a menu in a terminal, and prints the usage otherwise.
 
@@ -24,7 +35,7 @@ Run the commands from the repository root. `pnpm bannerfont` with no command ope
 | `pnpm bannerfont build` | `extract`, `pixilate`, `font`, then `test`. Takes `--mc-version`, `--cache` and `-c/--colors`, so `pnpm bannerfont build --mc-version 1.20.4` builds from another version |
 | `pnpm bannerfont extract` | downloads the official Minecraft client jar and builds the banner PNGs into `./images` |
 | `pnpm bannerfont pixilate images/` | traces the PNGs (any mix of files and folders) into SVGs in `./out`. Takes `-o/--output` and `-c/--colors` |
-| `pnpm bannerfont font` | compiles the SVGs into `./build/Font.ttf` |
+| `pnpm bannerfont font` | compiles the SVGs into `./build/Font.ttf` and `./build/web/` |
 | `pnpm bannerfont test` | runs the font tests against `./build/Font.ttf`, and fails if it does not exist |
 | `pnpm bannerfont prune` | clears the intermediate SVGs in `./out` |
 
@@ -41,6 +52,12 @@ The repository contains no Mojang assets. `pnpm bannerfont extract` reads the ba
 The layer color digit `x` (`0`-`f`) and the pattern number `yy` (`00`-`42`) follow a fixed encoding that is documented in `AGENTS.md`. The layer color order is not the Minecraft wiki order.
 
 Run `pnpm test` for the unit tests (extract stage, PNG codec, CLI wiring and the font build on synthetic input). The real-font tests are `pnpm bannerfont test`, which checks `build/Font.ttf` and is also the last step of `pnpm bannerfont build`.
+
+## Automated builds
+
+Every push to `main` runs the **Build font** GitHub Actions workflow. It installs the dependencies, checks types, runs the unit tests, and builds the default font (Minecraft `1.21.2`, standard quality), including the real-font tests. You can also start it manually from the Actions tab.
+
+After a successful run, download the `bannerfont` artifact from the workflow run's summary to get `Font.ttf`. Artifacts are kept for 90 days, the maximum for this public repository.
 
 ## Disclaimer
 The source code of this project is released under the MIT License (see `LICENSE`).

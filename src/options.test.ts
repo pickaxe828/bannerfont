@@ -79,8 +79,8 @@ describe("parseQuality", () => {
 })
 
 describe("pixilateSettings", () => {
-  it("standard keeps the original 3 colors and 10 gradient colors", () => {
-    assert.deepEqual(pixilateSettings("standard"), { colors: 3, gradientColors: 10 })
+  it("standard keeps the original 3 colors and 16 gradient colors", () => {
+    assert.deepEqual(pixilateSettings("standard"), { colors: 3, gradientColors: 16 })
   })
 
   it("high keeps more colors than standard", () => {

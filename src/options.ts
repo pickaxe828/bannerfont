@@ -33,12 +33,13 @@ export function parseColors(value: string | number | undefined): number {
 }
 
 /**
- * Quality presets: how many colors the tracing keeps per image and for the gradient patterns
- * (13 and 14). More colors give a closer picture and a bigger font. `standard` is the original
- * behavior; `gradientColors` must stay equal to `DETAILED_COLORS` in pixilate.ts for it.
+ * Quality presets: how many colors the tracing keeps per image and for the flat COLRv0 twin of the
+ * gradient patterns (13 and 14; their COLRv1 and SVG gradient does not depend on it). More colors give
+ * a closer picture and a bigger font. `standard.gradientColors` must stay equal to
+ * `RAMP_FALLBACK_COLORS` in pixilate.ts.
  */
 export const QUALITY_PRESETS = {
-  standard: { colors: DEFAULT_COLORS, gradientColors: 10 },
+  standard: { colors: DEFAULT_COLORS, gradientColors: 16 },
   // Lossless: the textures have at most 80 opaque colors (525 in the gradients), so these keep every
   // pixel exactly. More colors would give the same font (587 KB), only slower to build.
   high: { colors: 128, gradientColors: 600 },
