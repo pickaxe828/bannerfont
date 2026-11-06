@@ -25,3 +25,12 @@ _Avoid_: Fixtures, golden files
 
 **Space**:
 An empty glyph that moves the pen by a whole number of banners.
+
+**Font variant**:
+A rendition of bannerfont with a particular level of visual detail. Variants share the banner encoding and project version.
+
+**Highres**:
+The font variant that preserves the source banner textures' visual detail.
+
+**Project version**:
+The shared version of the bannerfont build tools and the fonts they produce. A change in visual detail alone distinguishes variants within that version.
