@@ -60,4 +60,4 @@ jobs:
           name: bannerfont
           path: build/Font.ttf
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

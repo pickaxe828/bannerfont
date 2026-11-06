@@ -46,7 +46,7 @@ Run `pnpm test` for the unit tests (extract stage, PNG codec, CLI wiring and the
 
 Every push to `main` runs the **Build font** GitHub Actions workflow. It installs the dependencies, checks types, runs the unit tests, and builds the default font (Minecraft `1.21.2`, standard quality), including the real-font tests. You can also start it manually from the Actions tab.
 
-After a successful run, download the `bannerfont` artifact from the workflow run's summary to get `Font.ttf`. Artifacts are kept for 30 days.
+After a successful run, download the `bannerfont` artifact from the workflow run's summary to get `Font.ttf`. Artifacts are kept for 90 days, the maximum for this public repository.
 
 ## Disclaimer
 The source code of this project is released under the MIT License (see `LICENSE`).
