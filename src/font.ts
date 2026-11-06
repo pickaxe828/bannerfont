@@ -4,7 +4,10 @@
 import { spawn } from "node:child_process"
 import fs from "node:fs"
 
+import { DEFAULT_IMAGES_DIR } from "./extract.ts"
+
 export const FONT_PATH = "build/Font.ttf"
+export const WEB_DIR = "build/web"
 export const SVG_DIR = "out"
 
 export interface RunResult {
@@ -34,9 +37,14 @@ export interface BuildFontOptions {
   run?: Runner
 }
 
-/** Compiles `SVG_DIR/*.svg` into the font. The child's output (stderr included) is shown; a non-zero exit throws. */
+/**
+ * Compiles `SVG_DIR/*.svg` into the universal font (`FONT_PATH`) and the split web fonts, stylesheet and
+ * check page (`WEB_DIR`). The PNGs of `DEFAULT_IMAGES_DIR` feed the font's bitmap fallback; the build skips that
+ * fallback when they are missing. The child's output (stderr included) is shown; a non-zero exit throws.
+ */
 export async function buildFont({ run: runner = run }: BuildFontOptions = {}): Promise<void> {
-  const { code } = await runner("uv", ["run", "python", "src/build_font.py", SVG_DIR, FONT_PATH], { show: true })
+  const args = ["run", "python", "src/build_font.py", SVG_DIR, FONT_PATH, "--images", DEFAULT_IMAGES_DIR, "--web", WEB_DIR]
+  const { code } = await runner("uv", args, { show: true })
   if (code !== 0) throw new Error(`The font build failed (exit code ${code})`)
 }
 
