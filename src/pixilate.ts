@@ -407,7 +407,12 @@ export async function pixilatePaths(paths: string[], options: PixilateOptions): 
       const { svg, fallbackSvg } = processImage(file, colors, { classes: RAMP_COLOR_CLASSES, fallbackColors: gradientColors })
       const glyph = Path.join(output, getName_King(Path.basename(file, Path.extname(file))))
       await fs.promises.writeFile(glyph + ".svg", svg)
-      if (fallbackSvg !== undefined) { await fs.promises.writeFile(glyph + ".flat.svg", fallbackSvg) }
+      if (fallbackSvg !== undefined) {
+        await fs.promises.writeFile(glyph + ".flat.svg", fallbackSvg)
+      } else {
+        // A previous conversion may have needed a twin that would now override the current COLRv0 glyph.
+        await fs.promises.rm(glyph + ".flat.svg", { force: true })
+      }
       result.written++
     } catch (err) {
       result.failed.push({ path: file, message: messageOf(err) })

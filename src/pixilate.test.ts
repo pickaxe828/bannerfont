@@ -127,6 +127,23 @@ describe("seam overlap", () => {
 })
 
 describe("pixilatePaths", () => {
+  it("removes a stale flat twin when a glyph becomes opaque", async (t) => {
+    const { root, images, out } = workspace()
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+    const file = path.join(images, "001.png")
+    const flat = path.join(out, "ue001.flat.svg")
+    fs.writeFileSync(file, neighbourPng(128))
+
+    assert.deepEqual(await pixilatePaths([file], { output: out, colors: 3 }), { written: 1, failed: [] })
+    assert.match(fs.readFileSync(flat, "utf8"), /fill-opacity=/)
+
+    fs.writeFileSync(file, neighbourPng(255))
+
+    assert.deepEqual(await pixilatePaths([file], { output: out, colors: 3 }), { written: 1, failed: [] })
+    assert.equal(fs.existsSync(flat), false)
+    assert.doesNotMatch(fs.readFileSync(path.join(out, "ue001.svg"), "utf8"), /data-mask/)
+  })
+
   it("writes one SVG per PNG of a directory, plus the geometry-free glyphs", async () => {
     const { images, out } = workspace()
     fs.writeFileSync(path.join(images, "000.png"), bannerPng())
